@@ -28,9 +28,10 @@ export function availableBundles(): string[] {
 /**
  * There is no isolated world in a WebView, so this captures
  * `ReactNativeWebView.postMessage` before any page script can swap it. Defence in
- * depth only — origin is attributed natively, never read from the page.
+ * depth only — origin is attributed natively, never read from the page. Exported
+ * for hosts that register the chain bundles as files instead of inlining them.
  */
-function preamble(config: InjectedConfig): string {
+export function buildPreamble(config: InjectedConfig): string {
   const channel = config.channel ?? DEFAULT_CHANNEL;
   return `(function () {
   if (window.${RN_GUARD}) return;
@@ -40,7 +41,8 @@ function preamble(config: InjectedConfig): string {
   var send = native && native.postMessage ? native.postMessage.bind(native) : null;
   var CHANNEL = ${JSON.stringify(channel)};
 
-  window.${RN_CONFIG} = ${JSON.stringify(config)};
+  // Shallow: a page script must not swap identity or channel before a bundle reads them.
+  window.${RN_CONFIG} = Object.freeze(${JSON.stringify(config)});
   window.${RN_DELIVER} = window.${RN_DELIVER} || {};
 
   window.${RN_POST} = function (env) {
@@ -65,7 +67,7 @@ function preamble(config: InjectedConfig): string {
  * and one bundle per family the host registered.
  */
 export function buildInjectedScript(config: InjectedConfig): string {
-  const parts = [preamble(config)];
+  const parts = [buildPreamble(config)];
   for (const family of familiesOf(config.networks)) {
     for (const name of BUNDLES_FOR[family]) {
       const bundle = INPAGE_BUNDLES[name];

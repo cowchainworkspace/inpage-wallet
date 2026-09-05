@@ -1,2 +1,7 @@
-export { availableBundles, buildDeliveryScript, buildInjectedScript } from "./build";
+export {
+  availableBundles,
+  buildDeliveryScript,
+  buildInjectedScript,
+  buildPreamble,
+} from "./build";
 export { INPAGE_BUNDLES } from "./bundles.generated";
