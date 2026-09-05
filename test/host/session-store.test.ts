@@ -74,6 +74,35 @@ describe("layeredSessionStore", () => {
     expect(local.get(A, "evm")).toMatchObject({ id: "backend-1" });
   });
 
+  it("does not call the backend for a write that only bumps lastUsedAt", async () => {
+    const local = localCache();
+    const upsert = vi.fn(async () => "backend-1");
+    const store = layeredSessionStore({ local, remote: { upsert } });
+
+    await store.set(session(A));
+    const stored = local.get(A, "evm");
+    if (!stored) throw new Error("nothing was stored");
+    await store.set({ ...stored, lastUsedAt: 2 });
+    await store.set({ ...stored, lastUsedAt: 3 });
+
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(local.get(A, "evm")).toMatchObject({ id: "backend-1", lastUsedAt: 3 });
+  });
+
+  it("writes through when a field the backend stores changed", async () => {
+    const local = localCache();
+    const upsert = vi.fn(async () => "backend-1");
+    const store = layeredSessionStore({ local, remote: { upsert } });
+
+    await store.set(session(A));
+    const stored = local.get(A, "evm");
+    if (!stored) throw new Error("nothing was stored");
+    await store.set({ ...stored, accounts: ["0xdef"], lastUsedAt: 2 });
+    await store.set({ ...stored, networkId: "137", lastUsedAt: 3 });
+
+    expect(upsert).toHaveBeenCalledTimes(3);
+  });
+
   it("keeps the local write when the backend is unreachable", async () => {
     const local = localCache();
     const store = layeredSessionStore({

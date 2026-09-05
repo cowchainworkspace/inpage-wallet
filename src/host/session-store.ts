@@ -71,6 +71,28 @@ export function memorySessionStore(seed: Session[] = []): SessionStore & {
   };
 }
 
+function sameList(
+  a: readonly (string | number)[] | undefined,
+  b: readonly (string | number)[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+/** Everything the backend stores. A signature only moves lastUsedAt. */
+function sameRemoteFields(a: Session, b: Session): boolean {
+  return (
+    a.origin === b.origin &&
+    a.family === b.family &&
+    a.networkId === b.networkId &&
+    a.walletId === b.walletId &&
+    a.addressType === b.addressType &&
+    sameList(a.accounts, b.accounts) &&
+    sameList(a.publicKey, b.publicKey)
+  );
+}
+
 /**
  * A synchronous local cache in front of an optional backend. dApps call
  * eth_accounts on every page load, so reads never wait on the network, and a
@@ -129,8 +151,11 @@ export function layeredSessionStore(deps: {
 
     set: async (session) => {
       const key = sessionKey(session.origin, session.family);
+      const previous = local.get(session.origin, session.family);
       local.set(session);
       announce(session.origin, session.family, session);
+      // One backend request per signature is not worth a lastUsedAt bump.
+      if (previous && sameRemoteFields(previous, session)) return;
       try {
         await pushRemote(session);
         pending.delete(key);
