@@ -25,8 +25,14 @@ export function invalidParams(message = "Invalid params"): RpcError {
   return rpcError(RPC_INVALID_PARAMS, message);
 }
 
+/** A method name echoed back is page-controlled text; it does not need to be long. */
+function short(method: unknown): string {
+  const text = typeof method === "string" ? method : String(method);
+  return text.length > 64 ? `${text.slice(0, 64)}…` : text;
+}
+
 export function unsupportedMethod(method: string): RpcError {
-  return rpcError(RPC_UNSUPPORTED_METHOD, `Unsupported method: ${method}`);
+  return rpcError(RPC_UNSUPPORTED_METHOD, `Unsupported method: ${short(method)}`);
 }
 
 /** Anything a UI callback throws becomes an RPC error; a thrown code is preserved. */

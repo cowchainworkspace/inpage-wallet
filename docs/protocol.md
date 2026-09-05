@@ -65,7 +65,15 @@ type Envelope = { channel: string; direction: "page-to-host" | "host-to-page" } 
 ```
 
 A receiver drops anything whose `channel` is not its own and whose `direction` is
-not the one it expects.
+not the one it expects, and then validates every field of the body — a `kind`
+alone says nothing about the rest. `id` is a non-empty string of at most 128
+characters, `method` a string of at most 128, `params` absent or an array,
+`families` an array of known families, `error.code` a number, and `event` one of
+the three names below. A body that does not check out is not a malformed
+request; it is not a request at all.
+
+Classification is total: a method that is not a string is `unsupported`, never a
+throw. A method name echoed back in an error is truncated to 64 characters.
 
 ### page-to-host
 

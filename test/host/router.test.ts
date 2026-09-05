@@ -825,6 +825,12 @@ describe("unknown and unregistered", () => {
     });
   });
 
+  it("truncates a method name it echoes back", async () => {
+    const out = await h.router.handle({ origin: ORIGIN, method: "z".repeat(500) });
+
+    expect((out as { error: { message: string } }).error.message.length).toBeLessThan(100);
+  });
+
   it("answers 4200 for a family the host did not register", async () => {
     expect(await h.router.handle({ origin: ORIGIN, method: "btc_accounts" })).toEqual({
       error: { code: 4200, message: "Unsupported method: btc_accounts" },

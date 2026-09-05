@@ -1,5 +1,5 @@
 import type { RpcError } from "./errors";
-import type { ChainFamily } from "./networks";
+import { isChainFamily, type ChainFamily } from "./networks";
 
 /**
  * Spoken only between a page and a host built from the same package version, so
@@ -46,16 +46,63 @@ export function hostToPage(channel: string, message: HostToPage): HostToPageEnve
   return { channel, direction: "host-to-page", ...message };
 }
 
+/** Long enough for a UUID and a namespaced method, short enough not to be a payload. */
+const MAX_FIELD = 128;
+
+const EVENT_NAMES: ReadonlySet<string> = new Set([
+  "accountsChanged",
+  "chainChanged",
+  "disconnect",
+]);
+
 function isEnvelopeShape(value: unknown, channel: string, direction: Direction): boolean {
   if (!value || typeof value !== "object") return false;
   const env = value as { channel?: unknown; direction?: unknown; kind?: unknown };
   return env.channel === channel && env.direction === direction && typeof env.kind === "string";
 }
 
+function bounded(value: unknown, allowEmpty = false): boolean {
+  if (typeof value !== "string" || value.length > MAX_FIELD) return false;
+  return allowEmpty || value.length > 0;
+}
+
+/**
+ * Every field is checked, not just the envelope's outline: whatever gets past
+ * this is handed to the router, and a `kind` alone says nothing about the rest.
+ */
 export function isPageToHost(value: unknown, channel: string): value is PageToHostEnvelope {
-  return isEnvelopeShape(value, channel, "page-to-host");
+  if (!isEnvelopeShape(value, channel, "page-to-host")) return false;
+  const env = value as Record<string, unknown>;
+  if (env.n !== undefined && !bounded(env.n)) return false;
+  switch (env.kind) {
+    case "ready":
+      return Array.isArray(env.families) && env.families.every(isChainFamily);
+    case "request":
+      return (
+        bounded(env.id) &&
+        bounded(env.method, true) &&
+        (env.params === undefined || Array.isArray(env.params))
+      );
+    default:
+      return false;
+  }
 }
 
 export function isHostToPage(value: unknown, channel: string): value is HostToPageEnvelope {
-  return isEnvelopeShape(value, channel, "host-to-page");
+  if (!isEnvelopeShape(value, channel, "host-to-page")) return false;
+  const env = value as Record<string, unknown>;
+  switch (env.kind) {
+    case "init":
+      return typeof env.icon === "string";
+    case "response": {
+      if (!bounded(env.id)) return false;
+      if (env.error === undefined) return true;
+      if (!env.error || typeof env.error !== "object") return false;
+      return typeof (env.error as { code?: unknown }).code === "number";
+    }
+    case "event":
+      return isChainFamily(env.family) && typeof env.event === "string" && EVENT_NAMES.has(env.event);
+    default:
+      return false;
+  }
 }

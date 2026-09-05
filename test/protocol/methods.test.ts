@@ -35,6 +35,15 @@ describe("classify", () => {
   it("keeps eth_sendRawTransaction off the read allow-list", () => {
     expect(classify("eth_sendRawTransaction")).toBe("unsupported");
   });
+
+  it("stays total on input that is not a method name", () => {
+    const junk = [null, undefined, 42, {}, [], Symbol("x")];
+
+    for (const value of junk) {
+      expect(classify(value as unknown as string)).toBe("unsupported");
+      expect(familyOf(value as unknown as string)).toBe("evm");
+    }
+  });
 });
 
 describe("familyOf", () => {

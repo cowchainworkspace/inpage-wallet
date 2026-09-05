@@ -88,10 +88,12 @@ export function installEvm(bridge: Bridge, config: InjectedConfig): EvmProvider 
 
   if (config.legacyGlobals?.ethereum && !(window as { ethereum?: unknown }).ethereum) {
     try {
+      // Not writable, so a later script cannot swap the provider out; still
+      // configurable, so the page is not permanently wedged by this definition.
       Object.defineProperty(window, "ethereum", {
         value: provider,
         writable: false,
-        configurable: false,
+        configurable: true,
       });
     } catch {
       (window as { ethereum?: unknown }).ethereum = provider;

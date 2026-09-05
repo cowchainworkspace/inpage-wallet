@@ -215,6 +215,7 @@ const FAMILY_PREFIXES: readonly [string, ChainFamily][] = [
 
 /** The family a method belongs to; EVM is the un-prefixed default. */
 export function familyOf(method: string): ChainFamily {
+  if (typeof method !== "string") return "evm";
   for (const [prefix, family] of FAMILY_PREFIXES) {
     if (method.startsWith(prefix)) return family;
   }
@@ -222,6 +223,7 @@ export function familyOf(method: string): ChainFamily {
 }
 
 export function classify(method: string): MethodKind {
+  if (typeof method !== "string") return "unsupported";
   if (READ_ONLY_METHODS.has(method)) return "readOnly";
   if (DEFAULT_READ_RPC_METHODS.has(method)) return "readRpc";
   if (SUBMIT_METHODS.has(method)) return "submit";
