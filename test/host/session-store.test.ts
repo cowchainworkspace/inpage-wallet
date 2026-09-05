@@ -111,7 +111,7 @@ describe("layeredSessionStore", () => {
   });
 
   it("reconcile clears local sessions the backend no longer has and reports them", async () => {
-    const local = localCache([session(A), session(B)]);
+    const local = localCache([session(A, { id: "backend-a" }), session(B, { id: "backend-b" })]);
     const changes: SessionChange[] = [];
     const store = layeredSessionStore({ local, remote: { list: async () => [session(B)] } });
     store.subscribe((c) => changes.push(c));
@@ -122,6 +122,35 @@ describe("layeredSessionStore", () => {
     expect(cleared[0]?.origin).toBe(A);
     expect(local.size()).toBe(1);
     expect(changes).toEqual([{ origin: A, family: "evm", session: null }]);
+  });
+
+  it("reconcile pushes a local session the backend never received", async () => {
+    const local = localCache([session(A)]);
+    const upsert = vi.fn(async () => "backend-a");
+    const changes: SessionChange[] = [];
+    const store = layeredSessionStore({ local, remote: { upsert, list: async () => [] } });
+    store.subscribe((c) => changes.push(c));
+
+    const cleared = await store.reconcile();
+
+    expect(cleared).toEqual([]);
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(local.get(A, "evm")).toMatchObject({ id: "backend-a" });
+    expect(changes).toEqual([{ origin: A, family: "evm", session: expect.objectContaining({ id: "backend-a" }) }]);
+  });
+
+  it("reconcile keeps a session whose push failed instead of clearing it", async () => {
+    const local = localCache([session(A)]);
+    const upsert = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const store = layeredSessionStore({ local, remote: { upsert, list: async () => [] } });
+
+    const cleared = await store.reconcile();
+
+    expect(cleared).toEqual([]);
+    expect(local.get(A, "evm")).toMatchObject({ origin: A });
+    expect(local.get(A, "evm")?.id).toBeUndefined();
   });
 
   it("reconcile leaves everything alone when the backend cannot be reached", async () => {

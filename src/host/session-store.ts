@@ -33,8 +33,9 @@ export type RemoteSessions = {
 
 export type LayeredSessionStore = SessionStore & {
   /**
-   * Pull the backend list and drop local sessions it no longer has. Returns the
-   * sessions that were cleared so the router can emit disconnect for each.
+   * Pull the backend list and drop local sessions it no longer has. One that has
+   * no backend id never got there, so it is pushed instead of dropped. Returns
+   * the sessions that were cleared so the router can emit disconnect for each.
    */
   reconcile(): Promise<Session[]>;
   subscribe(listener: (change: SessionChange) => void): () => void;
@@ -92,20 +93,25 @@ export function layeredSessionStore(deps: {
     }
   };
 
+  /** Push one session to the backend and adopt the id it assigns. Throws on failure. */
+  const pushRemote = async (session: Session): Promise<void> => {
+    const upsert = remote?.upsert;
+    if (!upsert) return;
+    const id = await upsert(session);
+    if (typeof id !== "string" || id === session.id) return;
+    const withId: Session = { ...session, id };
+    local.set(withId);
+    announce(withId.origin, withId.family, withId);
+  };
+
   return {
     get: async (origin, family) => local.get(origin, family),
 
     set: async (session) => {
       local.set(session);
       announce(session.origin, session.family, session);
-      if (!remote?.upsert) return;
       try {
-        const id = await remote.upsert(session);
-        if (typeof id === "string" && id !== session.id) {
-          const withId: Session = { ...session, id };
-          local.set(withId);
-          announce(withId.origin, withId.family, withId);
-        }
+        await pushRemote(session);
       } catch {
         /* the backend catches up later; the local write already stands */
       }
@@ -142,6 +148,15 @@ export function layeredSessionStore(deps: {
       const cleared: Session[] = [];
       for (const session of local.list()) {
         if (alive.has(sessionKey(session.origin, session.family))) continue;
+        if (session.id === undefined) {
+          // Absent remotely because it never got there — push it, do not drop it.
+          try {
+            await pushRemote(session);
+          } catch {
+            /* keep it locally and try again on the next reconcile */
+          }
+          continue;
+        }
         local.clear(session.origin, session.family);
         cleared.push(session);
         announce(session.origin, session.family, null);
