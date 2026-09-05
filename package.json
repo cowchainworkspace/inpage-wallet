@@ -108,6 +108,11 @@
       "limit": "4 kB"
     },
     {
+      "name": "xrp-standard",
+      "path": "dist/inpage/xrp-standard.iife.js",
+      "limit": "4 kB"
+    },
+    {
       "name": "btc",
       "path": "dist/inpage/btc.iife.js",
       "limit": "4 kB"
