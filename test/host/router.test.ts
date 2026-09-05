@@ -450,6 +450,100 @@ describe("wallet_switchEthereumChain", () => {
     expect(out).toEqual({ error: { code: 4001, message: "User rejected the request" } });
   });
 
+  it("answers 4902 without UI when the origin has no EVM session", async () => {
+    const addChain = vi.fn(async () => null);
+    const switchChain = vi.fn(async () => true);
+    h = harness([], {
+      ui: { connect: vi.fn(async () => null), sign: vi.fn(async () => "0x"), addChain, switchChain },
+    });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_addEthereumChain",
+      params: [{ chainId: "0x2105" }],
+    });
+
+    expect(out).toEqual({ error: { code: 4902, message: "Unrecognized chain ID" } });
+    expect(addChain).not.toHaveBeenCalled();
+    expect(switchChain).not.toHaveBeenCalled();
+  });
+
+  it("keeps a chain one origin added out of every other origin's registry", async () => {
+    const other = "https://evil.example";
+    const added: NetworkDef = { id: "8453", family: "evm", name: "Base", wire: { evmChainId: "0x2105" } };
+    const addChain = vi.fn(async (): Promise<NetworkDef | null> => added);
+    h = harness([session({ family: "evm" }), session({ family: "evm", origin: other })], {
+      ui: { connect: vi.fn(async () => null), sign: vi.fn(async () => "0x"), addChain },
+    });
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_addEthereumChain",
+      params: [{ chainId: "0x2105" }],
+    });
+    addChain.mockResolvedValue(null);
+    const out = await h.router.handle({
+      origin: other,
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0x2105" }],
+    });
+
+    expect(out).toEqual({ error: { code: 4902, message: "Unrecognized chain ID" } });
+    expect(await h.sessions.get(other, "evm")).toMatchObject({ networkId: "1" });
+  });
+
+  it("caps how many chains one origin can add", async () => {
+    const addChain = vi.fn(async (req: { chainId: string }) => ({
+      id: req.chainId,
+      family: "evm" as const,
+      name: `Chain ${req.chainId}`,
+      wire: { evmChainId: req.chainId },
+    }));
+    h = harness([session({ family: "evm" })], {
+      ui: { connect: vi.fn(async () => null), sign: vi.fn(async () => "0x"), addChain },
+      policy: { maxConcurrentPrompts: 32 },
+    });
+
+    for (let i = 0; i < 16; i += 1) {
+      const chainId = `0x${(0x1000 + i).toString(16)}`;
+      expect(
+        await h.router.handle({
+          origin: ORIGIN,
+          method: "wallet_addEthereumChain",
+          params: [{ chainId }],
+        }),
+      ).toEqual({ result: null });
+    }
+
+    expect(
+      await h.router.handle({
+        origin: ORIGIN,
+        method: "wallet_addEthereumChain",
+        params: [{ chainId: "0xbeef" }],
+      }),
+    ).toEqual({ error: { code: 4902, message: "Unrecognized chain ID" } });
+  });
+
+  it("registerNetwork makes a chain visible to every origin", async () => {
+    const other = "https://app.aave.com";
+    h = harness([session({ family: "evm", origin: other })]);
+
+    h.router.registerNetwork({
+      id: "8453",
+      family: "evm",
+      name: "Base",
+      wire: { evmChainId: "0x2105" },
+    });
+    const out = await h.router.handle({
+      origin: other,
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0x2105" }],
+    });
+
+    expect(out).toEqual({ result: null });
+    expect(await h.sessions.get(other, "evm")).toMatchObject({ networkId: "8453" });
+  });
+
   it("registers a network returned by addChain and completes the switch", async () => {
     const added: NetworkDef = { id: "8453", family: "evm", name: "Base", wire: { evmChainId: "0x2105" } };
     h = harness([session({ family: "evm" })], {

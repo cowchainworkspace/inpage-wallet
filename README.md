@@ -159,7 +159,10 @@ const NETWORKS: NetworkDef[] = [
 
 Which families appear in that list decides which providers get injected. A
 `wallet_switchEthereumChain` for a chain you have not registered answers `4902`,
-or reaches `ui.addChain` if you provide one.
+or reaches `ui.addChain` if you provide one — and a chain accepted there is
+scoped to the origin that asked, capped at 16, so one page cannot add a network
+of its choosing to every other page's registry. `router.registerNetwork(def)`
+adds one globally when you want that.
 
 ## Supported chains
 

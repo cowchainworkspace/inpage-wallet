@@ -201,6 +201,11 @@ export type ProviderRequest = {
 
 export interface DappRouter {
   handle(req: ProviderRequest): Promise<RouterOutcome>;
+  /**
+   * Add a network every origin can see. A chain accepted through `ui.addChain`
+   * is scoped to the origin that asked; this is how a host promotes one.
+   */
+  registerNetwork(network: NetworkDef): void;
   /** Clears the session, emits, and rejects everything in flight for it. */
   disconnect(origin: string, family: ChainFamily): Promise<void>;
   /** On tab close. Returns how many waiting requests were answered. */
@@ -332,14 +337,32 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     });
   }
 
+  /**
+   * A chain one origin talked the user into adding is that origin's, not the
+   * router's: registering it globally lets any other page switch to a network
+   * whose RPC and explorer the first page chose.
+   */
+  const addedByOrigin = new Map<string, NetworkDef[]>();
+  const MAX_ADDED_PER_ORIGIN = 16;
+
+  const visible = (origin: string): NetworkDef[] => {
+    const extra = addedByOrigin.get(origin);
+    return extra ? [...networks, ...extra] : networks;
+  };
+
   const familyRegistered = (family: ChainFamily): boolean =>
     networks.some((n) => n.family === family);
 
-  const defaultNetwork = (family: ChainFamily): NetworkDef | null =>
-    defaultNetworkFor(networks, family);
+  const defaultNetwork = (origin: string, family: ChainFamily): NetworkDef | null =>
+    defaultNetworkFor(visible(origin), family);
 
-  const networkOf = (session: Session | null, family: ChainFamily): NetworkDef | null =>
-    (session ? networkById(networks, session.networkId) : null) ?? defaultNetwork(family);
+  const networkOf = (
+    origin: string,
+    session: Session | null,
+    family: ChainFamily,
+  ): NetworkDef | null =>
+    (session ? networkById(visible(origin), session.networkId) : null) ??
+    defaultNetwork(origin, family);
 
   const emitFor = (origin: string, family: ChainFamily, event: ProviderEvent["event"], data: unknown): void => {
     deps.emit(origin, { family, event, data });
@@ -437,14 +460,14 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
   ): Promise<RouterOutcome> {
     const existing = await deps.sessions.get(origin, family);
     if (silentReconnect && existing && existing.accounts.length > 0) {
-      return { result: connectResult(family, existing, networkOf(existing, family)) };
+      return { result: connectResult(family, existing, networkOf(origin, existing, family)) };
     }
 
     // An eager reconnect must never open UI when there is nothing to reconnect to.
     const silent = Boolean(firstParam<{ silent?: boolean }>(params)?.silent);
     if (silent) return { result: null };
 
-    const fallback = defaultNetwork(family);
+    const fallback = defaultNetwork(origin, family);
     const decision = await decide(controller, () =>
       deps.ui.connect({
         origin,
@@ -459,7 +482,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     if (controller.signal.aborted) return { error: userRejected() };
     if (!decision || decision.accounts.length === 0) return { error: userRejected() };
 
-    const chosen = networkById(networks, decision.networkId) ?? fallback;
+    const chosen = networkById(visible(origin), decision.networkId) ?? fallback;
     if (!chosen) {
       return { error: rpcError(RPC_INTERNAL, `No ${family} network is registered`) };
     }
@@ -517,8 +540,14 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
       return { error: rpcError(RPC_CHAIN_NOT_ADDED, "Unrecognized chain ID") };
     }
 
+    // Nothing to switch, and no reason to prompt: an origin that never connected
+    // is asking about a chain it has no session on.
     const session = await deps.sessions.get(origin, "evm");
-    let network = networkByEvmChainId(networks, target);
+    if (!session || session.accounts.length === 0) {
+      return { error: rpcError(RPC_CHAIN_NOT_ADDED, "Unrecognized chain ID") };
+    }
+
+    let network = networkByEvmChainId(visible(origin), target);
 
     if (!network) {
       if (!deps.ui.addChain) {
@@ -530,7 +559,11 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
       );
       if (controller.signal.aborted) return { error: userRejected() };
       if (!added) return { error: rpcError(RPC_CHAIN_NOT_ADDED, "Unrecognized chain ID") };
-      networks.push(added);
+      const own = addedByOrigin.get(origin) ?? [];
+      if (own.length >= MAX_ADDED_PER_ORIGIN) {
+        return { error: rpcError(RPC_CHAIN_NOT_ADDED, "Unrecognized chain ID") };
+      }
+      addedByOrigin.set(origin, [...own, added]);
       network = added;
     }
 
@@ -725,7 +758,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     const built = buildSignRequest(method, {
       origin,
       session,
-      network: networkOf(session, family),
+      network: networkOf(origin, session, family),
       raw: params,
       signal: controller.signal,
     }, params);
@@ -785,7 +818,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     switch (kind) {
       case "readOnly": {
         const session = await deps.sessions.get(req.origin, family);
-        return answerReadOnly(req.method, session, networkOf(session, family));
+        return answerReadOnly(req.method, session, networkOf(req.origin, session, family));
       }
       case "readRpc": {
         if (!deps.rpc) return { error: unsupportedMethod(req.method) };
@@ -793,14 +826,14 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
         if (readRpcRequiresSession && (!session || session.accounts.length === 0)) {
           return { error: unauthorized() };
         }
-        const network = networkOf(session, family);
+        const network = networkOf(req.origin, session, family);
         if (!network) return { error: unsupportedMethod(req.method) };
         return callRpc(family, network, req.method, params);
       }
       case "submit": {
         const session = await deps.sessions.get(req.origin, family);
         if (!session || session.accounts.length === 0) return { error: unauthorized() };
-        const network = networkOf(session, family);
+        const network = networkOf(req.origin, session, family);
         const ask = deps.ui.submit;
         if (ask) {
           const result = await decide(controller, () =>
@@ -869,6 +902,11 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     },
 
     rejectAll,
+
+    registerNetwork(network) {
+      if (networks.some((n) => n.id === network.id)) return;
+      networks.push(network);
+    },
 
     dispose() {
       unsubscribe?.();

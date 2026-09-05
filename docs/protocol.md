@@ -206,11 +206,18 @@ Results per family:
 
 ### switch
 
-`wallet_switchEthereumChain`, `wallet_addEthereumChain`. The requested hex chain
-id is looked up in the host's registry. A chain that is not registered answers
-`4902`, unless the host supplies an add-chain callback that returns a network to
-register. A switch that changes the session's network emits `chainChanged` with
-the new hex id.
+`wallet_switchEthereumChain`, `wallet_addEthereumChain`. An origin with no EVM
+session answers `4902` with no UI: there is nothing to switch. Otherwise the
+requested hex chain id is looked up in the host's registry plus whatever that
+origin has already added. A chain that is not registered answers `4902`, unless
+the host supplies an add-chain callback that returns a network to register.
+
+**A chain added this way belongs to the origin that asked**, not to the router,
+and at most 16 of them: otherwise one page could talk a user into adding a chain
+whose RPC and explorer it chose and every other page would then be able to switch
+to it. `router.registerNetwork(def)` is how a host promotes one to global. A
+switch that changes the session's network emits `chainChanged` with the new hex
+id.
 
 ### sign
 
