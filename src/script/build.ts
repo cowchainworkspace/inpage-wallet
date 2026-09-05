@@ -73,7 +73,8 @@ export function buildPreamble(config: InjectedConfig): string {
     } catch (e) {}
   });
 
-  lock(${JSON.stringify(RN_RECEIVE)}, function (env) {
+  lock(${JSON.stringify(RN_RECEIVE)}, function (env, n) {
+    if ((n === undefined ? null : n) !== NONCE) return;
     if (!env || env.channel !== CHANNEL) return;
     var d = window.${RN_DELIVER};
     for (var key in d) {
@@ -101,7 +102,10 @@ export function buildInjectedScript(config: InjectedConfig): string {
   return `${parts.join("\n")}\ntrue;`;
 }
 
-/** One host-to-page envelope as an `injectJavaScript` payload. */
-export function buildDeliveryScript(env: HostToPageEnvelope): string {
-  return deliveryScript(env);
+/**
+ * One host-to-page envelope as an `injectJavaScript` payload. `nonce` must be the
+ * one the document now showing was injected with, or the page ignores the call.
+ */
+export function buildDeliveryScript(env: HostToPageEnvelope, nonce?: string | null): string {
+  return deliveryScript(env, nonce);
 }

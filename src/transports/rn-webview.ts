@@ -69,9 +69,20 @@ export function rnWebViewTransport(options: RnPageTransportOptions = {}): PageTr
   };
 }
 
-/** The `injectJavaScript` payload that hands one envelope to the page. */
-export function deliveryScript(env: HostToPageEnvelope): string {
-  return `window.${RN_RECEIVE} && window.${RN_RECEIVE}(${JSON.stringify(env)}); true;`;
+/** JSON is not a JavaScript expression until the line separators are escaped. */
+function jsLiteral(value: unknown): string {
+  return JSON.stringify(value ?? null)
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+/**
+ * The `injectJavaScript` payload that hands one envelope to the page. The nonce
+ * is the one the current document was injected with: a script built for an
+ * earlier document reaches nothing.
+ */
+export function deliveryScript(env: HostToPageEnvelope, nonce?: string | null): string {
+  return `window.${RN_RECEIVE} && window.${RN_RECEIVE}(${jsLiteral(env)}, ${jsLiteral(nonce)}); true;`;
 }
 
 export type RnHostTransportOptions = {
@@ -83,6 +94,9 @@ export type RnHostTransportOptions = {
 /** Above any legitimate envelope, and small enough that parsing one cannot stall. */
 export const MAX_ENVELOPE_BYTES = 1_000_000;
 
+/** The document the WebView is currently showing: origin and nonce, never one alone. */
+export type RnCommittedNavigation = { origin: string; nonce: string };
+
 export type RnHostTransport = HostTransport & {
   /**
    * Feed WebView `onMessage` payloads in. `origin` is the committed navigation
@@ -90,30 +104,33 @@ export type RnHostTransport = HostTransport & {
    */
   receive(origin: string | null, data: string): void;
   /**
-   * The nonce the current document was injected with, or null between documents.
-   * Until one is set nothing is accepted: on Android every frame can reach
-   * `ReactNativeWebView.postMessage`, and only the injected script knows this.
+   * The document now showing, or null between documents. Until one is committed
+   * nothing is accepted or delivered: on Android every frame can reach
+   * `ReactNativeWebView.postMessage`, and only the injected script knows the nonce.
    */
-  setNonce(nonce: string | null): void;
+  commit(navigation: RnCommittedNavigation | null): void;
 };
 
 export function createRnHostTransport(options: RnHostTransportOptions): RnHostTransport {
   const channel = options.channel ?? DEFAULT_CHANNEL;
   const handlers: ((origin: string, env: PageToHostEnvelope) => void)[] = [];
-  let nonce: string | null = null;
+  let current: RnCommittedNavigation | null = null;
 
   return {
-    deliver(_origin: string, env: HostToPageEnvelope): void {
-      options.inject(deliveryScript(env));
+    // A WebView has one document; injecting an answer for an origin that is no
+    // longer showing would hand it to whatever replaced it.
+    deliver(origin: string, env: HostToPageEnvelope): void {
+      if (!current || origin !== current.origin) return;
+      options.inject(deliveryScript(env, current.nonce));
     },
     onMessage(handler): void {
       handlers.push(handler);
     },
-    setNonce(next): void {
-      nonce = next;
+    commit(navigation): void {
+      current = navigation;
     },
     receive(origin, data): void {
-      if (!origin || !nonce) return;
+      if (!origin || !current || origin !== current.origin) return;
       if (typeof data !== "string" || data.length > MAX_ENVELOPE_BYTES) return;
       let parsed: unknown;
       try {
@@ -122,7 +139,7 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
         return;
       }
       if (!isPageToHost(parsed, channel)) return;
-      if (parsed.n !== nonce) return;
+      if (parsed.n !== current.nonce) return;
       for (const handler of handlers) handler(origin, parsed);
     },
   };

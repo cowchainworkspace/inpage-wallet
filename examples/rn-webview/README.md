@@ -17,7 +17,7 @@ The nonce is what separates the main frame from the iframes inside it. On Androi
 `ReactNativeWebView.postMessage` reaches every frame while the injected script
 runs main-frame only, so an iframe can hand-roll an envelope; only the stamp the
 preamble adds tells the two apart. Rebuild the script on each navigation and hand
-the same nonce to `transport.setNonce`.
+the same pair to `transport.commit`.
 
 This example is typechecked, not run. `react-native.d.ts` is a stand-in for the
 real React Native types; delete it in a real app.

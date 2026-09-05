@@ -27,7 +27,7 @@ function transportOn(nonce: string | null = NONCE): {
   const seen: { origin: string; kind: string }[] = [];
   const transport = createRnHostTransport({ inject: vi.fn() });
   transport.onMessage((origin, env) => seen.push({ origin, kind: env.kind }));
-  transport.setNonce(nonce);
+  transport.commit(nonce === null ? null : { origin: ORIGIN, nonce });
   return { transport, seen };
 }
 
@@ -65,19 +65,40 @@ describe("createRnHostTransport", () => {
     expect(seen).toEqual([]);
   });
 
-  it("delivers through injectJavaScript", () => {
+  it("delivers through injectJavaScript, carrying the document's nonce", () => {
     const inject = vi.fn();
     const transport = createRnHostTransport({ inject });
+    transport.commit({ origin: ORIGIN, nonce: NONCE });
 
     transport.deliver(ORIGIN, hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "data:x" }));
 
     expect(inject).toHaveBeenCalledTimes(1);
     expect(inject.mock.calls[0]?.[0]).toContain("__inpageWalletReceive");
+    expect(inject.mock.calls[0]?.[0]).toContain(NONCE);
+  });
+
+  it("injects nothing for an origin that is no longer showing", () => {
+    const inject = vi.fn();
+    const transport = createRnHostTransport({ inject });
+    transport.commit({ origin: "https://evil.example", nonce: NONCE });
+
+    transport.deliver(ORIGIN, hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "data:x" }));
+
+    expect(inject).not.toHaveBeenCalled();
+  });
+
+  it("injects nothing while no navigation is committed", () => {
+    const inject = vi.fn();
+    const transport = createRnHostTransport({ inject });
+
+    transport.deliver(ORIGIN, hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "data:x" }));
+
+    expect(inject).not.toHaveBeenCalled();
   });
 });
 
 describe("nonce", () => {
-  it("accepts nothing until a nonce is set", () => {
+  it("accepts nothing until a navigation is committed", () => {
     const seen: unknown[] = [];
     const transport = createRnHostTransport({ inject: vi.fn() });
     transport.onMessage((_o, env) => seen.push(env));
@@ -108,8 +129,16 @@ describe("nonce", () => {
   it("drops envelopes minted for the previous document", () => {
     const { transport, seen } = transportOn();
 
-    transport.setNonce("a-newer-nonce");
+    transport.commit({ origin: ORIGIN, nonce: "a-newer-nonce" });
     transport.receive(ORIGIN, payload("request"));
+
+    expect(seen).toEqual([]);
+  });
+
+  it("drops a message whose origin is not the one committed", () => {
+    const { transport, seen } = transportOn();
+
+    transport.receive("https://evil.example", payload("request"));
 
     expect(seen).toEqual([]);
   });

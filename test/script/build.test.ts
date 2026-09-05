@@ -18,6 +18,7 @@ type RnWindow = Window & {
   ReactNativeWebView?: { postMessage: (data: string) => void };
   __inpageWalletConfig?: { identity: { rdns: string } };
   __inpageWalletPost?: (env: unknown) => void;
+  __inpageWalletDeliver?: Record<string, (env: unknown) => void>;
   eval(script: string): unknown;
 };
 
@@ -123,6 +124,29 @@ describe("buildDeliveryScript", () => {
     const script = buildDeliveryScript(hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "x" }));
 
     expect(script.trim().endsWith("true;")).toBe(true);
+  });
+
+  it("escapes the line separators JSON allows but JavaScript does not", () => {
+    const script = buildDeliveryScript(
+      hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "a\u2028b\u2029c" }),
+    );
+
+    expect(script).not.toMatch(/[\u2028\u2029]/);
+    expect(() => new Function(script)).not.toThrow();
+  });
+
+  it("is ignored by a document injected with a different nonce", () => {
+    const { win } = freshPage();
+    win.eval(buildInjectedScript({ ...configFor(["evm"]), nonce: NONCE }));
+    const seen: unknown[] = [];
+    win.__inpageWalletDeliver = { probe: (env: unknown) => void seen.push(env) };
+    const env = hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "data:x" });
+
+    win.eval(buildDeliveryScript(env, "the-previous-document"));
+    expect(seen).toEqual([]);
+
+    win.eval(buildDeliveryScript(env, NONCE));
+    expect(seen).toEqual([env]);
   });
 });
 

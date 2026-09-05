@@ -96,7 +96,7 @@ const transport = createRnHostTransport({ inject: (s) => ref.current?.injectJava
   onMessage={(e) => transport.receive(committed.current?.origin ?? null, e.nativeEvent.data)}
   onNavigationStateChange={(nav) => {
     committed.current = nextCommittedNavigation(committed.current, nav, nonce);
-    transport.setNonce(committed.current?.nonce ?? null);
+    transport.commit(committed.current);
   }}
 />;
 ```
@@ -113,7 +113,10 @@ can hand-roll an envelope and have the host attribute it to the top-level
 origin. The preamble keeps the nonce in its closure, out of the page-readable
 config, and stamps it on every envelope; the transport drops anything that does
 not carry the nonce committed alongside the current origin, including everything
-before `setNonce` is called. See `examples/rn-webview` for the whole loop.
+before `transport.commit` is called. `commit` is also what binds delivery: a
+response for an origin the WebView is no longer showing is never injected, and a
+delivery script built for a previous document is ignored by the page. See
+`examples/rn-webview` for the whole loop.
 
 ## Identity
 

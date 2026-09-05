@@ -152,7 +152,7 @@ export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
       }
       const next = nextCommittedNavigation(committed.current, nav, nonce.current);
       committed.current = next;
-      transport.setNonce(next?.nonce ?? null);
+      transport.commit(next);
     },
     [transport],
   );
