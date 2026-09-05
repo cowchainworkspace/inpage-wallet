@@ -22,7 +22,9 @@ export default defineConfig({
   format: ["esm"],
   target: "es2022",
   dts: { compilerOptions: { types: [] } },
-  clean: false,
+  // Everything but the per-chain IIFEs, which scripts/bundle-inpage.mjs wrote
+  // into the same directory before this ran.
+  clean: ["**/*", "!inpage/*.iife.js"],
   splitting: true,
   sourcemap: false,
   treeshake: true,

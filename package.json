@@ -59,7 +59,7 @@
     "typecheck": "pnpm run bundle && tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
     "test": "pnpm run bundle && vitest run",
     "test:watch": "vitest",
-    "build": "pnpm run bundle && tsup",
+    "build": "node scripts/bundle-inpage.mjs --force && tsup",
     "size": "pnpm run build && size-limit",
     "prepare": "pnpm run build"
   },

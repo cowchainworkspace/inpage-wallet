@@ -19,4 +19,22 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
+
+      # Nothing tracked may change as a side effect of building. The injected
+      # bundles are generated, so a build that dirties the tree means something
+      # generated is committed, or something committed is generated.
+      - name: build leaves the tree clean
+        run: |
+          node scripts/bundle-inpage.mjs --force
+          git diff --exit-code
+
+      # The bundle string is shipped inside the package and injected into pages,
+      # so it has to be reproducible from the source alone.
+      - name: bundle generation is deterministic
+        run: |
+          node scripts/bundle-inpage.mjs --force
+          cp src/script/bundles.generated.ts "$RUNNER_TEMP/bundles-first.ts"
+          node scripts/bundle-inpage.mjs --force
+          diff -u "$RUNNER_TEMP/bundles-first.ts" src/script/bundles.generated.ts
+
       - run: pnpm exec size-limit

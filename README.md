@@ -244,7 +244,11 @@ pnpm size          # size-limit against the per-chain budgets
 
 `scripts/bundle-inpage.mjs` builds one self-contained IIFE per chain and embeds
 them in `src/script/bundles.generated.ts`, so `buildInjectedScript` needs no file
-system at runtime. It is generated, git-ignored, and refreshed automatically.
+system at runtime. It is generated and git-ignored. The generated file records a
+content hash of the sources it was built from, so it refreshes when they change
+and not when an mtime moves; `pnpm build` regenerates unconditionally, and CI
+checks that two consecutive regenerations are byte-identical and that building
+leaves the tree clean.
 
 ## License
 
