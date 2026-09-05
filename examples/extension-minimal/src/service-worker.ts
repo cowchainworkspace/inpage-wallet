@@ -32,10 +32,17 @@ async function toPage(origin: string, env: HostToPageEnvelope): Promise<void> {
   await chrome.tabs.sendMessage(tabId, env).catch(() => {});
 }
 
+/**
+ * A sheet that cannot show a field must not ask the user to approve it. This one
+ * renders `to` and `value` only, so anything else in the request is a refusal.
+ */
 function describe(req: SignRequest): string {
   switch (req.method) {
     case "eth_sendTransaction":
     case "eth_signTransaction":
+      if (req.tx.unknownFields.length > 0 || (req.tx.authorizationList?.length ?? 0) > 0) {
+        throw { code: -32602, message: "This transaction has fields this wallet cannot show" };
+      }
       return `Send ${req.tx.value} to ${req.tx.to ?? "a new contract"}`;
     case "personal_sign":
     case "eth_sign":

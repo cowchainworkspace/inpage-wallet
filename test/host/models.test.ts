@@ -63,12 +63,20 @@ describe("summarizeEvmTx", () => {
         dataLength: 4,
         data: "0xdeadbeef",
         chainId: "0x1",
+        gas: null,
+        gasPrice: null,
+        maxFeePerGas: null,
+        maxPriorityFeePerGas: null,
+        nonce: null,
+        type: null,
+        authorizationList: null,
+        unknownFields: [],
       },
     );
   });
 
   it("defaults a plain transfer and falls back to the session chain id", () => {
-    expect(summarizeEvmTx({ to: "0xb" }, "0x89")).toEqual({
+    expect(summarizeEvmTx({ to: "0xb" }, "0x89")).toMatchObject({
       from: null,
       to: "0xb",
       value: "0x0",
@@ -76,6 +84,54 @@ describe("summarizeEvmTx", () => {
       data: null,
       chainId: "0x89",
     });
+  });
+
+  it("models the fee and ordering fields instead of dropping them", () => {
+    expect(
+      summarizeEvmTx({
+        to: "0xb",
+        gas: "0x5208",
+        gasPrice: "0x1",
+        maxFeePerGas: "0x2",
+        maxPriorityFeePerGas: "0x3",
+        nonce: "0x7",
+        type: "0x2",
+      }),
+    ).toMatchObject({
+      gas: "0x5208",
+      gasPrice: "0x1",
+      maxFeePerGas: "0x2",
+      maxPriorityFeePerGas: "0x3",
+      nonce: "0x7",
+      type: "0x2",
+      unknownFields: [],
+    });
+  });
+
+  it("surfaces an EIP-7702 authorization list", () => {
+    const authorization = { chainId: "0x1", address: "0xdele", nonce: "0x0" };
+
+    const summary = summarizeEvmTx({
+      to: "0xb",
+      type: "0x4",
+      authorizationList: [authorization],
+    });
+
+    expect(summary.authorizationList).toEqual([authorization]);
+    expect(summary.unknownFields).toEqual([]);
+  });
+
+  it("lists every key it does not model, and only those", () => {
+    const summary = summarizeEvmTx({
+      to: "0xb",
+      value: "0x1",
+      gas: "0x5208",
+      accessList: [],
+      blobVersionedHashes: [],
+      customField: 1,
+    });
+
+    expect(summary.unknownFields).toEqual(["accessList", "blobVersionedHashes", "customField"]);
   });
 
   it("reads calldata from `input` when a dApp uses that name", () => {

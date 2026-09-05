@@ -201,6 +201,16 @@ router rejects it with `4100` ("Account is not in this session") before any UI
 when it is not one of the session's accounts. EVM addresses compare
 case-insensitively; every other family's compare exactly.
 
+**A sheet must refuse what it cannot render.** `eth_sendTransaction` and
+`eth_signTransaction` are parsed into a summary that models presence rather than
+dropping it: `from`, `to`, `value`, `data`, `chainId`, `gas`, `gasPrice`,
+`maxFeePerGas`, `maxPriorityFeePerGas`, `nonce`, `type`, `authorizationList`
+(EIP-7702), and `unknownFields` — every key of the request the model does not
+cover. A host must not open a sign sheet when `unknownFields` is non-empty or
+`authorizationList` is non-empty unless it renders those itself: a 7702
+authorization hands the whole account to a contract, and an unrendered field is
+one the user did not agree to.
+
 Wire shapes worth stating:
 
 | method | params | result |

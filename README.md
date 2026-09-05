@@ -75,6 +75,12 @@ without the user — a closed tab, a disconnect, the policy timeout — so wire 
 close the modal. Whatever a modal resolves after that point is discarded: no
 session is written, no event is emitted.
 
+**Refuse what your sheet cannot show.** The EVM transaction summary carries
+`unknownFields` — every key of the request the model does not cover — and
+`authorizationList` for EIP-7702. Throw rather than open a sheet when either is
+non-empty and you do not render it: a 7702 authorization hands the whole account
+to a contract, and an unrendered field is one the user did not agree to.
+
 ## Quickstart: React Native WebView
 
 `buildInjectedScript` returns the whole injected script as a string — a preamble
