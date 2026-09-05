@@ -3,6 +3,7 @@ import {
   RPC_CHAIN_NOT_ADDED,
   RPC_INTERNAL,
   RPC_UNAUTHORIZED,
+  invalidParams,
   rpcError,
   toRpcError,
   unauthorized,
@@ -69,6 +70,13 @@ type SignBase = {
   origin: string;
   session: Session;
   network: NetworkDef | null;
+  /**
+   * The one value the parsed model was built from. Sign this — never re-derive a
+   * payload from `raw`, or a page that sends two candidates gets one rendered
+   * and the other signed.
+   */
+  payload: unknown;
+  /** The params as they arrived. Diagnostic only: it is not what was parsed. */
   raw: unknown[];
   /** Aborts when the request is cancelled or times out: close the modal. */
   signal: AbortSignal;
@@ -78,7 +86,7 @@ export type SignRequest =
   | (SignBase & {
       family: "evm";
       method: "eth_signTypedData" | "eth_signTypedData_v3" | "eth_signTypedData_v4";
-      typedData: Eip712Tree | null;
+      typedData: Eip712Tree;
     })
   | (SignBase & {
       family: "evm";
@@ -181,10 +189,6 @@ function firstParam<T>(params: unknown[]): T | undefined {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
 }
 
 function asBytes(value: unknown): number[] {
@@ -500,85 +504,149 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
 
   // --- sign -----------------------------------------------------------------
 
+  type SignBuild = { request: SignRequest } | { error: RpcError };
+
+  /**
+   * A model built from a value the host cannot point back at is a sheet showing
+   * one thing and a signature over another, so every branch either names its
+   * payload or refuses. A missing or mistyped param is -32602, never an empty
+   * string standing in for one.
+   */
   function buildSignRequest(
     method: string,
-    base: SignBase,
+    base: Omit<SignBase, "payload">,
     params: unknown[],
-  ): SignRequest | null {
+  ): SignBuild {
     const p0 = asRecord(params[0]);
+    const bad = { error: invalidParams(`Invalid params for ${method}`) };
+    const text = (value: unknown): string | null => (typeof value === "string" ? value : null);
+
     switch (method) {
       case "eth_signTypedData":
       case "eth_signTypedData_v3":
       case "eth_signTypedData_v4": {
         // Wallets receive [address, json]; a few dApps still send [json, address].
-        const candidate = typeof params[1] === "string" ? params[1] : params[0];
-        return { ...base, family: "evm", method, typedData: parseTypedData(candidate) };
+        const second = typeof params[1] === "string" ? parseTypedData(params[1]) : null;
+        const payload = second ? params[1] : params[0];
+        const typedData = second ?? parseTypedData(params[0]);
+        if (!typedData) return bad;
+        return { request: { ...base, payload, family: "evm", method, typedData } };
       }
       case "eth_sendTransaction":
-      case "eth_signTransaction":
+      case "eth_signTransaction": {
+        const payload = params[0];
+        if (!payload || typeof payload !== "object") return bad;
         return {
-          ...base,
-          family: "evm",
-          method,
-          tx: summarizeEvmTx(params[0], base.network?.wire.evmChainId ?? null),
+          request: {
+            ...base,
+            payload,
+            family: "evm",
+            method,
+            tx: summarizeEvmTx(payload, base.network?.wire.evmChainId ?? null),
+          },
         };
-      case "personal_sign":
-        return { ...base, family: "evm", method, message: asString(params[0]) };
-      case "eth_sign":
-        return { ...base, family: "evm", method, message: asString(params[1]) };
+      }
+      case "personal_sign": {
+        const message = text(params[0]);
+        if (message === null) return bad;
+        return { request: { ...base, payload: message, family: "evm", method, message } };
+      }
+      case "eth_sign": {
+        const message = text(params[1]);
+        if (message === null) return bad;
+        return { request: { ...base, payload: message, family: "evm", method, message } };
+      }
       case "solana_signTransaction":
-      case "solana_signAndSendTransaction":
+      case "solana_signAndSendTransaction": {
+        const account = text(p0.account);
+        if (!Array.isArray(p0.tx) || account === null) return bad;
         return {
-          ...base,
-          family: "solana",
-          method,
-          txBytes: asBytes(p0.tx),
-          account: asString(p0.account),
+          request: {
+            ...base,
+            payload: p0.tx,
+            family: "solana",
+            method,
+            txBytes: asBytes(p0.tx),
+            account,
+          },
         };
-      case "solana_signMessage":
+      }
+      case "solana_signMessage": {
+        const account = text(p0.account);
+        if (!Array.isArray(p0.message) || account === null) return bad;
         return {
-          ...base,
-          family: "solana",
-          method,
-          messageBytes: asBytes(p0.message),
-          account: asString(p0.account),
+          request: {
+            ...base,
+            payload: p0.message,
+            family: "solana",
+            method,
+            messageBytes: asBytes(p0.message),
+            account,
+          },
         };
-      case "cardano_signTx":
+      }
+      case "cardano_signTx": {
+        const tx = text(p0.tx);
+        if (tx === null) return bad;
         return {
-          ...base,
-          family: "cardano",
-          method,
-          tx: asString(p0.tx),
-          partialSign: Boolean(p0.partialSign),
+          request: {
+            ...base,
+            payload: tx,
+            family: "cardano",
+            method,
+            tx,
+            partialSign: Boolean(p0.partialSign),
+          },
         };
-      case "cardano_signData":
+      }
+      case "cardano_signData": {
+        const address = text(p0.address);
+        const payload = text(p0.payload);
+        if (address === null || payload === null) return bad;
+        // The CIP-30 payload is the signed value: SignBase.payload names the same one.
+        return { request: { ...base, family: "cardano", method, address, payload } };
+      }
+      case "tron_signTransaction": {
+        const transaction = p0.transaction;
+        if (transaction === undefined || transaction === null) return bad;
+        return { request: { ...base, payload: transaction, family: "tron", method, transaction } };
+      }
+      case "tron_signMessage": {
+        const message = text(p0.message);
+        if (message === null) return bad;
+        return { request: { ...base, payload: message, family: "tron", method, message } };
+      }
+      case "xrpl_signTransaction": {
+        const txJson = p0.tx_json;
+        if (!txJson || typeof txJson !== "object") return bad;
         return {
-          ...base,
-          family: "cardano",
-          method,
-          address: asString(p0.address),
-          payload: asString(p0.payload),
+          request: {
+            ...base,
+            payload: txJson,
+            family: "xrp",
+            method,
+            txJson: asRecord(txJson),
+            submit: Boolean(p0.submit),
+          },
         };
-      case "tron_signTransaction":
-        return { ...base, family: "tron", method, transaction: p0.transaction };
-      case "tron_signMessage":
-        return { ...base, family: "tron", method, message: asString(p0.message) };
-      case "xrpl_signTransaction":
-        return {
-          ...base,
-          family: "xrp",
-          method,
-          txJson: asRecord(p0.tx_json),
-          submit: Boolean(p0.submit),
-        };
-      case "xrpl_signMessage":
-        return { ...base, family: "xrp", method, message: asString(p0.message) };
-      case "btc_signPsbt":
-        return { ...base, family: "btc", method, psbt: asString(p0.psbt) };
-      case "btc_signMessage":
-        return { ...base, family: "btc", method, message: asString(p0.message) };
+      }
+      case "xrpl_signMessage": {
+        const message = text(p0.message);
+        if (message === null) return bad;
+        return { request: { ...base, payload: message, family: "xrp", method, message } };
+      }
+      case "btc_signPsbt": {
+        const psbt = text(p0.psbt);
+        if (psbt === null) return bad;
+        return { request: { ...base, payload: psbt, family: "btc", method, psbt } };
+      }
+      case "btc_signMessage": {
+        const message = text(p0.message);
+        if (message === null) return bad;
+        return { request: { ...base, payload: message, family: "btc", method, message } };
+      }
       default:
-        return null;
+        return { error: unsupportedMethod(method) };
     }
   }
 
@@ -597,14 +665,15 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
       return { error: rpcError(RPC_UNAUTHORIZED, "Account is not in this session") };
     }
 
-    const request = buildSignRequest(method, {
+    const built = buildSignRequest(method, {
       origin,
       session,
       network: networkOf(session, family),
       raw: params,
       signal: controller.signal,
     }, params);
-    if (!request) return { error: unsupportedMethod(method) };
+    if ("error" in built) return { error: built.error };
+    const request = built.request;
 
     try {
       const result = await decide(controller, () => deps.ui.sign(request));

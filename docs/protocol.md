@@ -201,6 +201,14 @@ router rejects it with `4100` ("Account is not in this session") before any UI
 when it is not one of the session's accounts. EVM addresses compare
 case-insensitively; every other family's compare exactly.
 
+**Sign `payload`, never `raw`.** Every sign request carries `payload`: the one
+value the parsed model was built from. `raw` is the params as they arrived and is
+diagnostic only. A page can send two plausible candidates — `[drainPermit,
+benignLogin]` for typed data — and a host that re-derives its own payload from
+`raw` renders one and signs the other. Typed data that cannot be parsed answers
+`-32602` and no sheet opens; a missing or mistyped required param answers
+`-32602` rather than reaching the UI as an empty string or an empty byte array.
+
 **A sheet must refuse what it cannot render.** `eth_sendTransaction` and
 `eth_signTransaction` are parsed into a summary that models presence rather than
 dropping it: `from`, `to`, `value`, `data`, `chainId`, `gas`, `gasPrice`,

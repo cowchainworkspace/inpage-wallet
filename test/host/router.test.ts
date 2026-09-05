@@ -16,6 +16,7 @@ import type { Session } from "../../src/protocol/session";
 const ORIGIN = "https://app.uniswap.org";
 const EVM_ADDRESS = "0x7a3f000000000000000000000000000000002b1c";
 const SOL_ADDRESS = "So11111111111111111111111111111111111111112";
+const MESSAGE = "0xdeadbeef";
 
 const NETWORKS: NetworkDef[] = [
   { id: "1", family: "evm", name: "Ethereum", wire: { evmChainId: "0x1", caip2: "eip155:1" } },
@@ -446,7 +447,11 @@ describe("signing", () => {
     h = harness([session({ family: "evm" })]);
     h.sign.mockRejectedValue({ code: 4001, message: "User rejected the request" });
 
-    const out = await h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "personal_sign",
+      params: ["0xdeadbeef", EVM_ADDRESS],
+    });
 
     expect(out).toEqual({ error: { code: 4001, message: "User rejected the request" } });
   });
@@ -463,6 +468,114 @@ describe("signing", () => {
     const req = h.sign.mock.calls[0]?.[0] as SignRequest & { family: "solana" };
     expect("txBytes" in req && req.txBytes).toEqual([1, 2, 3]);
     expect(req.account).toBe(SOL_ADDRESS);
+  });
+});
+
+describe("the payload the model was built from", () => {
+  const INVALID = { code: -32602 };
+
+  it("names the typed data candidate the tree came from, not the other one", async () => {
+    h = harness([session({ family: "evm" })]);
+    const drainPermit = JSON.stringify({
+      primaryType: "Permit",
+      message: { spender: "0xattacker", value: "115792089237316195423570985008687907853269984665640564039457584007913129639935" },
+    });
+    const benignLogin = JSON.stringify({
+      primaryType: "Login",
+      message: { statement: "Sign in" },
+    });
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_signTypedData_v4",
+      params: [drainPermit, benignLogin],
+    });
+
+    const req = h.sign.mock.calls[0]?.[0] as SignRequest & { family: "evm" };
+    expect(req.payload).toBe(benignLogin);
+    expect("typedData" in req && req.typedData.primaryType).toBe("Login");
+  });
+
+  it("still parses the [json, address] order dApps sometimes send", async () => {
+    h = harness([session({ family: "evm" })]);
+    const typed = JSON.stringify({ primaryType: "Permit", message: { value: "1" } });
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_signTypedData_v4",
+      params: [typed, EVM_ADDRESS],
+    });
+
+    const req = h.sign.mock.calls[0]?.[0] as SignRequest & { family: "evm" };
+    expect(req.payload).toBe(typed);
+  });
+
+  it("never opens a sheet for typed data it could not parse", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_signTypedData_v4",
+      params: [EVM_ADDRESS, "not json"],
+    });
+
+    expect(out).toMatchObject({ error: INVALID });
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("refuses an object where a string message belongs", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "personal_sign",
+      params: [{ toString: "0xdeadbeef" }, EVM_ADDRESS],
+    });
+
+    expect(out).toMatchObject({ error: INVALID });
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("refuses every sign method whose required param is missing", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    for (const method of ["personal_sign", "eth_sign", "eth_sendTransaction"]) {
+      expect(await h.router.handle({ origin: ORIGIN, method, params: [] })).toMatchObject({
+        error: INVALID,
+      });
+    }
+
+    h = harness([session({ family: "cardano", accounts: ["addr1"] })]);
+    for (const method of ["cardano_signTx", "cardano_signData"]) {
+      expect(await h.router.handle({ origin: ORIGIN, method, params: [{}] })).toMatchObject({
+        error: INVALID,
+      });
+    }
+
+    h = harness([session({ family: "solana" })]);
+    expect(
+      await h.router.handle({
+        origin: ORIGIN,
+        method: "solana_signMessage",
+        params: [{ account: SOL_ADDRESS }],
+      }),
+    ).toMatchObject({ error: INVALID });
+
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("hands the message itself as the payload of a personal_sign", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "personal_sign",
+      params: [MESSAGE, EVM_ADDRESS],
+    });
+
+    const req = h.sign.mock.calls[0]?.[0] as SignRequest;
+    expect(req.payload).toBe(MESSAGE);
+    expect(req.raw).toEqual([MESSAGE, EVM_ADDRESS]);
   });
 });
 
@@ -640,7 +753,7 @@ describe("disconnect and tab close", () => {
     h = harness([session({ family: "evm" })]);
     h.sign.mockImplementation(() => new Promise(() => {}));
 
-    const pending = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
+    const pending = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
     await h.router.disconnect(ORIGIN, "evm");
 
     expect(await pending).toEqual({ error: { code: 4001, message: "User rejected the request" } });
@@ -655,8 +768,8 @@ describe("disconnect and tab close", () => {
     h = harness([session({ family: "evm" })]);
     h.sign.mockImplementation(() => new Promise(() => {}));
 
-    const a = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
-    const b = h.router.handle({ origin: ORIGIN, method: "eth_sign", params: [] });
+    const a = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
+    const b = h.router.handle({ origin: ORIGIN, method: "eth_sign", params: [EVM_ADDRESS, MESSAGE] });
 
     expect(h.router.rejectAll(ORIGIN)).toBe(2);
     expect(await a).toMatchObject({ error: { code: 4001 } });
@@ -694,7 +807,7 @@ describe("disconnect and tab close", () => {
         }),
     );
 
-    const pending = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
+    const pending = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
     await flush();
     await h.router.disconnect(ORIGIN, "evm");
     release("0xsigned");

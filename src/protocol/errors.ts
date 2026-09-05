@@ -21,6 +21,10 @@ export function unauthorized(message = "Unauthorized — connect the wallet firs
   return rpcError(RPC_UNAUTHORIZED, message);
 }
 
+export function invalidParams(message = "Invalid params"): RpcError {
+  return rpcError(RPC_INVALID_PARAMS, message);
+}
+
 export function unsupportedMethod(method: string): RpcError {
   return rpcError(RPC_UNSUPPORTED_METHOD, `Unsupported method: ${method}`);
 }
