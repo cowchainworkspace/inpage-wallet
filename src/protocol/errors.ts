@@ -7,6 +7,7 @@ export const RPC_UNSUPPORTED_METHOD = 4200;
 export const RPC_DISCONNECTED = 4900;
 export const RPC_CHAIN_NOT_ADDED = 4902;
 export const RPC_INVALID_PARAMS = -32602;
+export const RPC_LIMIT_EXCEEDED = -32005;
 export const RPC_INTERNAL = -32603;
 
 export function rpcError(code: number, message: string): RpcError {
@@ -19,6 +20,10 @@ export function userRejected(message = "User rejected the request"): RpcError {
 
 export function unauthorized(message = "Unauthorized — connect the wallet first"): RpcError {
   return rpcError(RPC_UNAUTHORIZED, message);
+}
+
+export function limitExceeded(message = "Request limit exceeded"): RpcError {
+  return rpcError(RPC_LIMIT_EXCEEDED, message);
 }
 
 export function invalidParams(message = "Invalid params"): RpcError {

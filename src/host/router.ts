@@ -4,6 +4,7 @@ import {
   RPC_INTERNAL,
   RPC_UNAUTHORIZED,
   invalidParams,
+  limitExceeded,
   rpcError,
   toRpcError,
   unauthorized,
@@ -173,6 +174,14 @@ export type Policy = {
   requestTimeoutMs?: number | undefined;
   /** Hex ids. Default: every registered EVM network. */
   supportedEvmChainIds?: ReadonlySet<string> | undefined;
+  /**
+   * Prompts one origin may have open at once — sign, switch, addChain, submit.
+   * Default 1: a second sheet is a second thing to misread. Connect is coalesced
+   * and never counted.
+   */
+  maxConcurrentPrompts?: number | undefined;
+  /** Requests of any kind one origin may have waiting. Default 256. */
+  maxInFlightPerOrigin?: number | undefined;
 };
 
 export type RouterDeps = {
@@ -265,9 +274,12 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
   const readRpcRequiresSession = policy.readRpcRequiresSession !== false;
   const silentReconnect = policy.silentReconnect !== false;
   const timeoutMs = policy.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxPrompts = policy.maxConcurrentPrompts ?? 1;
+  const maxInFlight = policy.maxInFlightPerOrigin ?? 256;
 
   const inFlight = new Map<string, Set<Cancellable>>();
   const connecting = new Map<string, Promise<RouterOutcome>>();
+  const prompts = new Map<string, number>();
 
   const track = (origin: string) => (control: Cancellable) => {
     let set = inFlight.get(origin);
@@ -821,9 +833,32 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     }
   }
 
+  /** Every kind that opens UI of its own. Connect is coalesced into one prompt. */
+  const PROMPT_KINDS: ReadonlySet<string> = new Set(["sign", "switch", "submit"]);
+
+  function releasePrompt(origin: string): void {
+    const open = (prompts.get(origin) ?? 1) - 1;
+    if (open > 0) prompts.set(origin, open);
+    else prompts.delete(origin);
+  }
+
   return {
+    // Counted before anything is allocated: a page that fires a thousand signs
+    // must not cost a thousand timers, controllers and modals to refuse.
     handle(req) {
-      return guard(req.origin, (controller) => route(req, controller));
+      if ((inFlight.get(req.origin)?.size ?? 0) >= maxInFlight) {
+        return Promise.resolve({ error: limitExceeded() });
+      }
+      const { kind } = classifyForHost(req.method, readRpc);
+      if (!PROMPT_KINDS.has(kind)) {
+        return guard(req.origin, (controller) => route(req, controller));
+      }
+      const open = prompts.get(req.origin) ?? 0;
+      if (open >= maxPrompts) return Promise.resolve({ error: limitExceeded() });
+      prompts.set(req.origin, open + 1);
+      return guard(req.origin, (controller) => route(req, controller)).finally(() => {
+        releasePrompt(req.origin);
+      });
     },
 
     async disconnect(origin, family) {

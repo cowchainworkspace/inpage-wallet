@@ -270,6 +270,7 @@ Wire shapes worth stating:
 | `4200`   | Unsupported method, or a family the host did not register. |
 | `4900`   | Disconnected. |
 | `4902`   | Unrecognized chain id. |
+| `-32005` | Request limit exceeded — too many prompts or requests in flight for this origin. |
 | `-32602` | Invalid request. |
 | `-32603` | Internal error, including a node failure behind `readRpc`. |
 
@@ -277,6 +278,15 @@ The router never throws to its caller: every outcome is `{ result }` or
 `{ error }`. Anything a UI callback throws is mapped to an error, keeping a
 `code` the callback set. Cardano's `enable()` rejects with the CIP-30 refusal
 code `-3` instead, because that is what CIP-30 dApps catch.
+
+## Limits
+
+One origin may have one prompt open at a time — sign, switch, addChain, submit —
+and 256 requests of any kind in flight. Both are policy
+(`maxConcurrentPrompts`, `maxInFlightPerOrigin`). Overflow answers `-32005`
+before anything is allocated: a page that fires a thousand signs must not cost a
+thousand timers and modals to refuse. Connect is coalesced into a single prompt
+per origin and family, so it is never counted.
 
 ## Timeouts and cancellation
 

@@ -818,6 +818,63 @@ describe("solana", () => {
   });
 });
 
+describe("concurrency caps", () => {
+  it("lets one sign through and refuses the rest", async () => {
+    h = harness([session({ family: "evm" })]);
+    h.sign.mockImplementation(() => new Promise(() => {}));
+
+    const outcomes = await Promise.all(
+      Array.from({ length: 50 }, () =>
+        h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] }),
+      ).slice(1),
+    );
+
+    expect(h.sign).toHaveBeenCalledTimes(1);
+    expect(outcomes).toHaveLength(49);
+    expect(outcomes.every((o) => "error" in o && o.error.code === -32005)).toBe(true);
+    h.router.rejectAll(ORIGIN);
+  });
+
+  it("takes the next prompt once the first is answered", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    await h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
+    const out = await h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
+
+    expect(out).toEqual({ result: "0xsigned" });
+    expect(h.sign).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts prompts per origin, not globally", async () => {
+    const other = "https://app.aave.com";
+    h = harness([session({ family: "evm" }), session({ family: "evm", origin: other })]);
+    h.sign.mockImplementation(() => new Promise(() => {}));
+
+    void h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
+    void h.router.handle({ origin: other, method: "personal_sign", params: [MESSAGE] });
+    await flush();
+
+    expect(h.sign).toHaveBeenCalledTimes(2);
+    h.router.rejectAll(ORIGIN);
+    h.router.rejectAll(other);
+  });
+
+  it("refuses anything at all past maxInFlightPerOrigin", async () => {
+    h = harness([session({ family: "evm" })], {
+      policy: { maxConcurrentPrompts: 4, maxInFlightPerOrigin: 2 },
+    });
+    h.sign.mockImplementation(() => new Promise(() => {}));
+
+    void h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
+    void h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });
+    await flush();
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_accounts" });
+
+    expect(out).toEqual({ error: { code: -32005, message: "Request limit exceeded" } });
+    h.router.rejectAll(ORIGIN);
+  });
+});
+
 describe("unknown and unregistered", () => {
   it("answers EIP-1193 4200 for a method it does not know", async () => {
     expect(await h.router.handle({ origin: ORIGIN, method: "eth_nonsense" })).toEqual({
@@ -855,7 +912,7 @@ describe("disconnect and tab close", () => {
   });
 
   it("rejectAll answers waiting requests and reports how many", async () => {
-    h = harness([session({ family: "evm" })]);
+    h = harness([session({ family: "evm" })], { policy: { maxConcurrentPrompts: 2 } });
     h.sign.mockImplementation(() => new Promise(() => {}));
 
     const a = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [MESSAGE] });

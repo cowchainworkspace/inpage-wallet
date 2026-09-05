@@ -213,6 +213,8 @@ policy: {
   silentReconnect: true,       // answer connect from an existing session with no UI
   requestTimeoutMs: 120_000,   // then the request answers 4001
   supportedEvmChainIds: undefined, // hex set; default is every registered EVM network
+  maxConcurrentPrompts: 1,     // sheets one origin can have open; overflow is -32005
+  maxInFlightPerOrigin: 256,   // requests of any kind one origin can have waiting
 }
 ```
 
