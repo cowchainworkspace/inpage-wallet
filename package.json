@@ -122,5 +122,10 @@
       "path": "dist/inpage/tron.iife.js",
       "limit": "3 kB"
     }
-  ]
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
 }
