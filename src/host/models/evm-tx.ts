@@ -1,7 +1,7 @@
 /**
  * What a confirmation sheet needs from an EVM transaction, without an ABI decoder.
- * Presence is modelled, never dropped: a field the sheet does not show is a field
- * the user did not agree to.
+ * A host signs the transaction it builds from these fields, never the raw
+ * object; `ignoredFields` is display-only and never feeds a signer.
  */
 export type EvmTxSummary = {
   from: string | null;
@@ -23,8 +23,15 @@ export type EvmTxSummary = {
    * contract: it is the whole account, not one transfer.
    */
   authorizationList: unknown[] | null;
-  /** Every key of the request this model does not cover, in the order sent. */
-  unknownFields: string[];
+  /** EIP-2930 access list. */
+  accessList: unknown[] | null;
+  /** EIP-4844 blob hashes and per-blob gas cap. */
+  blobVersionedHashes: string[] | null;
+  maxFeePerBlobGas: string | null;
+  /** True when the request carries blob bytes a host cannot render. */
+  hasBlobPayload: boolean;
+  /** Every key of the request this model does not cover, in the order sent. Informational only. */
+  ignoredFields: string[];
 };
 
 const MODELLED: ReadonlySet<string> = new Set([
@@ -35,12 +42,19 @@ const MODELLED: ReadonlySet<string> = new Set([
   "input",
   "chainId",
   "gas",
+  "gasLimit",
   "gasPrice",
   "maxFeePerGas",
   "maxPriorityFeePerGas",
   "nonce",
   "type",
   "authorizationList",
+  "accessList",
+  "blobVersionedHashes",
+  "maxFeePerBlobGas",
+  "blobs",
+  "sidecars",
+  "kzg",
 ]);
 
 function str(value: unknown): string | null {
@@ -53,9 +67,19 @@ function byteLength(data: string | null): number {
   return Math.floor(body.length / 2);
 }
 
+function strArray(value: unknown): string[] | null {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : null;
+}
+
 export function summarizeEvmTx(raw: unknown, chainId?: string | null): EvmTxSummary {
   const tx = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const data = str(tx.data) ?? str(tx.input);
+  const blobVersionedHashes = strArray(tx.blobVersionedHashes);
+  const hasBlobPayload =
+    tx.blobs !== undefined ||
+    tx.sidecars !== undefined ||
+    tx.kzg !== undefined ||
+    blobVersionedHashes !== null;
   return {
     from: str(tx.from),
     to: str(tx.to),
@@ -63,13 +87,17 @@ export function summarizeEvmTx(raw: unknown, chainId?: string | null): EvmTxSumm
     dataLength: byteLength(data),
     data,
     chainId: str(tx.chainId) ?? chainId ?? null,
-    gas: str(tx.gas),
+    gas: str(tx.gas) ?? str(tx.gasLimit),
     gasPrice: str(tx.gasPrice),
     maxFeePerGas: str(tx.maxFeePerGas),
     maxPriorityFeePerGas: str(tx.maxPriorityFeePerGas),
     nonce: str(tx.nonce),
     type: str(tx.type),
     authorizationList: Array.isArray(tx.authorizationList) ? tx.authorizationList : null,
-    unknownFields: Object.keys(tx).filter((key) => !MODELLED.has(key)),
+    accessList: Array.isArray(tx.accessList) ? tx.accessList : null,
+    blobVersionedHashes,
+    maxFeePerBlobGas: str(tx.maxFeePerBlobGas),
+    hasBlobPayload,
+    ignoredFields: Object.keys(tx).filter((key) => !MODELLED.has(key)),
   };
 }

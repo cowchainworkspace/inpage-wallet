@@ -54,16 +54,26 @@ async function broadcast(origin: string, env: HostToPageEnvelope): Promise<void>
 
 /**
  * A sheet that cannot show a field must not ask the user to approve it. This one
- * renders `to` and `value` only, so anything else in the request is a refusal.
+ * renders `to` and `value` only, so a feature that changes what is signed but
+ * isn't rendered here is a refusal; `ignoredFields` is safe to skip.
  */
 function describe(req: SignRequest): string {
   switch (req.method) {
     case "eth_sendTransaction":
     case "eth_signTransaction":
-      if (req.tx.unknownFields.length > 0 || (req.tx.authorizationList?.length ?? 0) > 0) {
+      if (
+        (req.tx.authorizationList?.length ?? 0) > 0 ||
+        req.tx.hasBlobPayload ||
+        (req.tx.accessList?.length ?? 0) > 0
+      ) {
         throw { code: -32602, message: "This transaction has fields this wallet cannot show" };
       }
-      return `Send ${req.tx.value} to ${req.tx.to ?? "a new contract"}`;
+      return (
+        `Send ${req.tx.value} to ${req.tx.to ?? "a new contract"}` +
+        (req.tx.ignoredFields.length > 0
+          ? ` (unrendered, informational: ${req.tx.ignoredFields.join(", ")})`
+          : "")
+      );
     case "personal_sign":
     case "eth_sign":
       return `Sign message: ${req.message.slice(0, 64)}`;

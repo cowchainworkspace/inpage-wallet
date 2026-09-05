@@ -246,15 +246,23 @@ benignLogin]` for typed data — and a host that re-derives its own payload from
 `-32602` and no sheet opens; a missing or mistyped required param answers
 `-32602` rather than reaching the UI as an empty string or an empty byte array.
 
-**A sheet must refuse what it cannot render.** `eth_sendTransaction` and
-`eth_signTransaction` are parsed into a summary that models presence rather than
-dropping it: `from`, `to`, `value`, `data`, `chainId`, `gas`, `gasPrice`,
-`maxFeePerGas`, `maxPriorityFeePerGas`, `nonce`, `type`, `authorizationList`
-(EIP-7702), and `unknownFields` — every key of the request the model does not
-cover. A host must not open a sign sheet when `unknownFields` is non-empty or
-`authorizationList` is non-empty unless it renders those itself: a 7702
-authorization hands the whole account to a contract, and an unrendered field is
-one the user did not agree to.
+**Build the signed transaction from the summary, never the raw object.**
+`eth_sendTransaction` and `eth_signTransaction` are parsed into a summary that
+models presence rather than dropping it: `from`, `to`, `value`, `data`,
+`chainId`, `gas` (aliasing ethers v5's `gasLimit`), `gasPrice`, `maxFeePerGas`,
+`maxPriorityFeePerGas`, `nonce`, `type`, `authorizationList` (EIP-7702),
+`accessList` (EIP-2930), `blobVersionedHashes` / `maxFeePerBlobGas` /
+`hasBlobPayload` (EIP-4844), and `ignoredFields` — every key of the request the
+model does not cover. A host must build the transaction it signs from these
+typed fields and must never pass `payload` or `raw` for `eth_sendTransaction` /
+`eth_signTransaction` to a signer: with that rule, a field the model does not
+cover is harmless by construction. `ignoredFields` is informational — safe to
+ignore, useful for an "advanced details" section. A host must refuse to render
+only when `authorizationList` is non-empty, `hasBlobPayload` is true, or
+`accessList` is non-empty, unless it renders and supports that feature: a 7702
+authorization hands the whole account to a contract, blob bytes cannot be
+rendered without decoding them, and an access list changes gas accounting the
+sheet did not show.
 
 Wire shapes worth stating:
 

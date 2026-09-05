@@ -70,7 +70,11 @@ describe("summarizeEvmTx", () => {
         nonce: null,
         type: null,
         authorizationList: null,
-        unknownFields: [],
+        accessList: null,
+        blobVersionedHashes: null,
+        maxFeePerBlobGas: null,
+        hasBlobPayload: false,
+        ignoredFields: [],
       },
     );
   });
@@ -104,7 +108,7 @@ describe("summarizeEvmTx", () => {
       maxPriorityFeePerGas: "0x3",
       nonce: "0x7",
       type: "0x2",
-      unknownFields: [],
+      ignoredFields: [],
     });
   });
 
@@ -118,7 +122,41 @@ describe("summarizeEvmTx", () => {
     });
 
     expect(summary.authorizationList).toEqual([authorization]);
-    expect(summary.unknownFields).toEqual([]);
+    expect(summary.ignoredFields).toEqual([]);
+  });
+
+  it("maps ethers v5's gasLimit onto gas", () => {
+    const summary = summarizeEvmTx({ to: "0xb", gasLimit: "0x5208" });
+
+    expect(summary.gas).toBe("0x5208");
+    expect(summary.ignoredFields).toEqual([]);
+  });
+
+  it("surfaces an EIP-2930 access list", () => {
+    const accessList = [{ address: "0xabc", storageKeys: ["0x0"] }];
+
+    const summary = summarizeEvmTx({ to: "0xb", accessList });
+
+    expect(summary.accessList).toEqual(accessList);
+    expect(summary.ignoredFields).toEqual([]);
+  });
+
+  it("flags an EIP-4844 blob payload and surfaces the versioned hashes", () => {
+    const summary = summarizeEvmTx({
+      to: "0xb",
+      maxFeePerBlobGas: "0x1",
+      blobVersionedHashes: ["0x01"],
+      blobs: ["0xdead"],
+    });
+
+    expect(summary.hasBlobPayload).toBe(true);
+    expect(summary.blobVersionedHashes).toEqual(["0x01"]);
+    expect(summary.maxFeePerBlobGas).toBe("0x1");
+    expect(summary.ignoredFields).toEqual([]);
+  });
+
+  it("does not flag a blob payload when none of the blob fields are present", () => {
+    expect(summarizeEvmTx({ to: "0xb" }).hasBlobPayload).toBe(false);
   });
 
   it("lists every key it does not model, and only those", () => {
@@ -126,12 +164,11 @@ describe("summarizeEvmTx", () => {
       to: "0xb",
       value: "0x1",
       gas: "0x5208",
-      accessList: [],
-      blobVersionedHashes: [],
+      foo: "bar",
       customField: 1,
     });
 
-    expect(summary.unknownFields).toEqual(["accessList", "blobVersionedHashes", "customField"]);
+    expect(summary.ignoredFields).toEqual(["foo", "customField"]);
   });
 
   it("reads calldata from `input` when a dApp uses that name", () => {

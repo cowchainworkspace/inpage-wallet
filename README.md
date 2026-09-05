@@ -75,11 +75,16 @@ without the user — a closed tab, a disconnect, the policy timeout — so wire 
 close the modal. Whatever a modal resolves after that point is discarded: no
 session is written, no event is emitted.
 
-**Refuse what your sheet cannot show.** The EVM transaction summary carries
-`unknownFields` — every key of the request the model does not cover — and
-`authorizationList` for EIP-7702. Throw rather than open a sheet when either is
-non-empty and you do not render it: a 7702 authorization hands the whole account
-to a contract, and an unrendered field is one the user did not agree to.
+**Build the transaction you sign from the summary, never the raw request.**
+Never pass `payload`/`raw` for `eth_sendTransaction` / `eth_signTransaction` to
+a signer — build it from the summary's typed fields instead, so an unmodelled
+key is harmless by construction. `ignoredFields` lists every key of the request
+the model does not cover, for an optional "advanced details" section; it is
+informational only. Throw rather than open a sheet when `authorizationList` is
+non-empty, `hasBlobPayload` is true, or `accessList` is non-empty and you do not
+render/support it: a 7702 authorization hands the whole account to a contract,
+and a field that changes what is signed but is not shown is one the user did
+not agree to.
 
 ## Quickstart: React Native WebView
 
