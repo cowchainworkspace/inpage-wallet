@@ -16,12 +16,10 @@ export { claimInstall, resetInstalls } from "./core/guard";
 export type { HostTransport, PageTransport } from "./core/transport";
 
 export function bridgeFor(transport: PageTransport, config: InjectedConfig): Bridge {
-  return createBridge(
-    transport,
-    config.channel === undefined
-      ? { fallbackIcon: initialIcon(config) }
-      : { channel: config.channel, fallbackIcon: initialIcon(config) },
-  );
+  return createBridge(transport, {
+    channel: config.channel,
+    fallbackIcon: initialIcon(config),
+  });
 }
 
 /**

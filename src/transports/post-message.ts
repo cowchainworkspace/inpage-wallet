@@ -7,9 +7,9 @@ import {
 import type { PageTransport } from "../inpage/core/transport";
 
 export type PostMessageTransportOptions = {
-  channel?: string;
+  channel?: string | undefined;
   /** The window to talk through; defaults to the page's own. */
-  target?: Window;
+  target?: Window | undefined;
 };
 
 /**

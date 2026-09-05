@@ -17,11 +17,11 @@ export type ProviderEvent = {
 
 export type PageToHost =
   | { kind: "ready"; families: ChainFamily[] }
-  | { kind: "request"; id: string; method: string; params?: unknown[] };
+  | { kind: "request"; id: string; method: string; params?: unknown[] | undefined };
 
 export type HostToPage =
   | { kind: "init"; icon: string }
-  | { kind: "response"; id: string; result?: unknown; error?: RpcError }
+  | { kind: "response"; id: string; result?: unknown; error?: RpcError | undefined }
   | ({ kind: "event" } & ProviderEvent);
 
 export type Direction = "page-to-host" | "host-to-page";

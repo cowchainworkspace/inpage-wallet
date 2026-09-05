@@ -9,7 +9,7 @@ export type WalletIdentity = {
   rdns: string;
   uuid: string;
   /** Data URI. A neutral spec-valid placeholder is used until the host sends one. */
-  icon?: string;
+  icon?: string | undefined;
 };
 
 export type InjectedConfig = {
@@ -17,16 +17,16 @@ export type InjectedConfig = {
   /** Host ids and names; the families present decide which providers are injected. */
   networks: NetworkDef[];
   /** Which network answers before a session exists. */
-  defaultNetwork?: Partial<Record<ChainFamily, string>>;
+  defaultNetwork?: Partial<Record<ChainFamily, string>> | undefined;
   legacyGlobals?: {
     /** Define window.ethereum if absent. Off by default: EIP-6963 only. */
-    ethereum?: boolean;
+    ethereum?: boolean | undefined;
     /** Use the full TronWeb SDK entry instead of the thin tronLink bridge. */
-    tronWeb?: boolean;
-  };
+    tronWeb?: boolean | undefined;
+  } | undefined;
   /** window.cardano key dApps enumerate. Defaults to a slug of identity.name. */
-  cardanoWalletKey?: string;
-  channel?: string;
+  cardanoWalletKey?: string | undefined;
+  channel?: string | undefined;
 };
 
 /** Neutral placeholder shown until the host delivers its own icon. */

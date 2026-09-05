@@ -56,7 +56,7 @@
   },
   "scripts": {
     "bundle": "node scripts/bundle-inpage.mjs",
-    "typecheck": "pnpm run bundle && tsc --noEmit",
+    "typecheck": "pnpm run bundle && tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
     "test": "pnpm run bundle && vitest run",
     "test:watch": "vitest",
     "build": "pnpm run bundle && tsup",

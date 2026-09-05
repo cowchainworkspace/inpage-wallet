@@ -17,12 +17,12 @@ export function isChainFamily(value: unknown): value is ChainFamily {
 /** What each dApp-facing standard needs on the wire for a given network. */
 export type NetworkWire = {
   /** Hex, for eth_chainId and EIP-3326. */
-  evmChainId?: string;
+  evmChainId?: string | undefined;
   /** Wallet Standard moniker, e.g. "solana:mainnet" or "bitcoin:testnet". */
-  walletStandardChain?: string;
-  cardanoNetworkId?: 0 | 1;
+  walletStandardChain?: string | undefined;
+  cardanoNetworkId?: 0 | 1 | undefined;
   /** CAIP-2, surfaced in parsed models and events. */
-  caip2?: string;
+  caip2?: string | undefined;
 };
 
 /** A network the host registers. Ids are the host's own, never the package's. */

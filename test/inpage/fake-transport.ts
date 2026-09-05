@@ -44,11 +44,13 @@ export function configFor(families: (keyof typeof NETWORKS)[]): InjectedConfig {
   };
 }
 
+type PageRequest = { id: string; method: string; params?: unknown[] | undefined };
+
 export type FakeTransport = PageTransport & {
   sent: PageToHostEnvelope[];
   /** Everything the page asked for, oldest first. */
-  requests(): { id: string; method: string; params?: unknown[] }[];
-  lastRequest(): { id: string; method: string; params?: unknown[] };
+  requests(): PageRequest[];
+  lastRequest(): PageRequest;
   deliver(message: HostToPage): void;
   /** Answer the newest outstanding request. */
   respond(result: unknown): void;
@@ -59,10 +61,10 @@ export function fakeTransport(channel: string): FakeTransport {
   const sent: PageToHostEnvelope[] = [];
   const handlers: ((env: HostToPageEnvelope) => void)[] = [];
 
-  const requests = (): { id: string; method: string; params?: unknown[] }[] =>
+  const requests = (): PageRequest[] =>
     sent.filter((e): e is PageToHostEnvelope & { kind: "request" } => e.kind === "request");
 
-  const lastRequest = (): { id: string; method: string; params?: unknown[] } => {
+  const lastRequest = (): PageRequest => {
     const all = requests();
     const last = all[all.length - 1];
     if (!last) throw new Error("no request was sent");

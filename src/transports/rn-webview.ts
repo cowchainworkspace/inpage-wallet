@@ -27,9 +27,9 @@ function globals(): PageGlobals {
 let deliverSlot = 0;
 
 export type RnPageTransportOptions = {
-  channel?: string;
+  channel?: string | undefined;
   /** Slot in the deliver registry; one per provider sharing the page. */
-  key?: string;
+  key?: string | undefined;
 };
 
 /**
@@ -77,7 +77,7 @@ export function deliveryScript(env: HostToPageEnvelope): string {
 export type RnHostTransportOptions = {
   /** Wire this to `webView.injectJavaScript`. */
   inject(script: string): void;
-  channel?: string;
+  channel?: string | undefined;
 };
 
 export type RnHostTransport = HostTransport & {

@@ -1,0 +1,42 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "emitDeclarationOnly": false,
+    "declaration": false,
+    "jsx": "preserve",
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "inpage-wallet": [
+        "../src/index.ts"
+      ],
+      "inpage-wallet/protocol": [
+        "../src/protocol/index.ts"
+      ],
+      "inpage-wallet/host": [
+        "../src/host/index.ts"
+      ],
+      "inpage-wallet/inpage": [
+        "../src/inpage/index.ts"
+      ],
+      "inpage-wallet/inpage/*": [
+        "../src/inpage/chains/*.ts"
+      ],
+      "inpage-wallet/transports/*": [
+        "../src/transports/*.ts"
+      ],
+      "inpage-wallet/script": [
+        "../src/script/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "extension-minimal",
+    "rn-webview"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../dist"
+  ]
+}

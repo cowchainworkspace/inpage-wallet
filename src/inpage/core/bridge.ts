@@ -10,7 +10,7 @@ import type { ChainFamily } from "../../protocol/networks";
 import type { PageTransport } from "./transport";
 
 export type BridgeOptions = {
-  channel?: string;
+  channel?: string | undefined;
   fallbackIcon: string;
 };
 
@@ -96,9 +96,7 @@ export function createBridge(transport: PageTransport, options: BridgeOptions): 
       return new Promise<unknown>((resolve, reject) => {
         const id = newRequestId();
         pending.set(id, { resolve, reject });
-        transport.post(
-          pageToHost(channel, params === undefined ? { kind: "request", id, method } : { kind: "request", id, method, params }),
-        );
+        transport.post(pageToHost(channel, { kind: "request", id, method, params }));
       });
     },
     onEvent(family, handler) {

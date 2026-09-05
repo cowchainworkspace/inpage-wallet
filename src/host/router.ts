@@ -32,12 +32,12 @@ export type ConnectRequest = {
 export type ConnectDecision = {
   accounts: string[];
   /** A NetworkDef.id; the family default when omitted. */
-  networkId?: string;
-  walletId?: string;
+  networkId?: string | undefined;
+  walletId?: string | undefined;
   /** Account public key bytes, JSON-safe. Solana and BTC surface it to the page. */
-  publicKey?: number[];
+  publicKey?: number[] | undefined;
   /** BTC only, e.g. "p2wpkh". */
-  addressType?: string;
+  addressType?: string | undefined;
 };
 
 export type SwitchChainRequest = {
@@ -114,9 +114,9 @@ export type UiHandlers = {
   /** Resolve with the signature / signed bytes / tx hash, or throw an RpcError. */
   sign(req: SignRequest): Promise<unknown>;
   /** Default: switch silently when the chain is registered, 4902 otherwise. */
-  switchChain?(req: SwitchChainRequest): Promise<boolean>;
+  switchChain?: ((req: SwitchChainRequest) => Promise<boolean>) | undefined;
   /** Default: 4902. Return a NetworkDef to register it and complete the switch. */
-  addChain?(req: AddChainRequest): Promise<NetworkDef | null>;
+  addChain?: ((req: AddChainRequest) => Promise<NetworkDef | null>) | undefined;
 };
 
 export type RpcRequest = {
@@ -131,27 +131,27 @@ export type RpcRequest = {
 export type RpcClient = (req: RpcRequest) => Promise<unknown>;
 
 export type Policy = {
-  readRpc?: ReadRpcPolicy;
+  readRpc?: ReadRpcPolicy | undefined;
   /** Answer a connect from an existing session without opening UI. Default true. */
-  silentReconnect?: boolean;
-  requestTimeoutMs?: number;
+  silentReconnect?: boolean | undefined;
+  requestTimeoutMs?: number | undefined;
   /** Hex ids. Default: every registered EVM network. */
-  supportedEvmChainIds?: ReadonlySet<string>;
+  supportedEvmChainIds?: ReadonlySet<string> | undefined;
 };
 
 export type RouterDeps = {
   networks: NetworkDef[];
   sessions: SessionStore;
   ui: UiHandlers;
-  rpc?: RpcClient;
+  rpc?: RpcClient | undefined;
   emit(origin: string, event: ProviderEvent): void;
-  policy?: Policy;
+  policy?: Policy | undefined;
 };
 
 export type ProviderRequest = {
   origin: string;
   method: string;
-  params?: unknown[];
+  params?: unknown[] | undefined;
 };
 
 export interface DappRouter {
