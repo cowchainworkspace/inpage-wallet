@@ -1,5 +1,6 @@
 /**
  * @vitest-environment jsdom
+ * @vitest-environment-options { "url": "https://app.uniswap.org" }
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,7 +15,7 @@ import {
   type HostToPageEnvelope,
 } from "../../src/protocol/envelope";
 
-const ORIGIN = "http://localhost:3000";
+const ORIGIN = "https://app.uniswap.org";
 
 type Harness = {
   toWorker: WorkerBoundMessage[];

@@ -31,9 +31,13 @@ generated in the page and echoed back.
 navigation in a WebView. While a navigation to a different origin is in flight
 the origin is null and requests arriving in that window are dropped.
 
-In an extension that is the whole story: the isolated world sees the frame it
-runs in, and the worker should attribute by `sender.origin`, `sender.tab.id` and
-`sender.frameId` rather than by anything in the message.
+In an extension the isolated world sees the frame it runs in, and a document
+with no usable origin — a sandboxed iframe, `data:`, `file:`, plain `http:`, all
+of which report `"null"` or something no session can be keyed on — is not
+relayed at all. The worker must attribute by `sender.origin`, `sender.tab.id`
+and `sender.frameId`, which the browser stamps, rather than by anything in the
+message, and must answer with that `frameId`: the same origin can be open in
+several tabs, and an iframe is not its parent.
 
 **React Native needs more, and the nonce is not optional there.** On Android
 `ReactNativeWebView.postMessage` is exposed to *every* frame in the WebView,
@@ -109,6 +113,13 @@ the envelope must survive `JSON.stringify`. Cardano (hex), XRPL (JSON) and BTC
 
 A family is one dApp-facing provider standard. The host registers networks; the
 families present in that list decide which providers are injected.
+
+**Provider identity means nothing to the router.** Which injected object a page
+called — the EIP-1193 provider, the Wallet Standard wallet, `window.cardano.x` —
+never crosses the boundary. Any of them can send any family's method, and the
+router decides the family from the method name alone. The boundary is the
+per-family session: a page connected for `evm` and not for `solana` gets `4100`
+on `solana_signMessage` however it asked.
 
 | family    | standard                 | page surface                        |
 | --------- | ------------------------ | ----------------------------------- |

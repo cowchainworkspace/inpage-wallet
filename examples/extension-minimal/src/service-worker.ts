@@ -21,15 +21,35 @@ const local: LocalSessionCache = {
   list: () => [...cache.values()],
 };
 
-async function tabIdFor(origin: string): Promise<number | undefined> {
-  const tabs = await chrome.tabs.query({ url: `${origin}/*` });
-  return tabs[0]?.id;
+/**
+ * Answers go back to the exact frame that asked, never to whatever tab happens to
+ * be on that origin now: the same origin can be open in several tabs, and an
+ * iframe is not its parent. Events are broadcast to the frames still connected.
+ */
+type Frame = { tabId: number; frameId: number };
+
+const frames = new Map<string, Set<string>>();
+const frameKey = (f: Frame): string => `${f.tabId}:${f.frameId}`;
+
+function remember(origin: string, frame: Frame): void {
+  let set = frames.get(origin);
+  if (!set) {
+    set = new Set();
+    frames.set(origin, set);
+  }
+  set.add(frameKey(frame));
 }
 
-async function toPage(origin: string, env: HostToPageEnvelope): Promise<void> {
-  const tabId = await tabIdFor(origin);
-  if (tabId === undefined) return;
-  await chrome.tabs.sendMessage(tabId, env).catch(() => {});
+async function toFrame(frame: Frame, env: HostToPageEnvelope): Promise<void> {
+  await chrome.tabs.sendMessage(frame.tabId, env, { frameId: frame.frameId }).catch(() => {});
+}
+
+async function broadcast(origin: string, env: HostToPageEnvelope): Promise<void> {
+  for (const key of frames.get(origin) ?? []) {
+    const [tabId, frameId] = key.split(":").map(Number);
+    if (tabId === undefined || frameId === undefined) continue;
+    await toFrame({ tabId, frameId }, env);
+  }
 }
 
 /**
@@ -73,23 +93,29 @@ const router = createDappRouter({
     },
   },
   emit: (origin, event) => {
-    void toPage(origin, hostToPage(DEFAULT_CHANNEL, { kind: "event", ...event }));
+    void broadcast(origin, hostToPage(DEFAULT_CHANNEL, { kind: "event", ...event }));
   },
   // The extension keeps its own three-minute approval window.
   policy: { requestTimeoutMs: 180_000 },
 });
 
-chrome.runtime.onMessage.addListener((message: unknown): boolean => {
+chrome.runtime.onMessage.addListener((message: unknown, sender): boolean => {
   const bound = message as WorkerBoundMessage | undefined;
   if (!bound) return false;
   const env: PageToHostEnvelope = bound.env;
   if (env.kind !== "request") return false;
-  const { origin } = bound;
+
+  // The browser stamps these; nothing in the message is trusted for identity.
+  const tabId = sender.tab?.id;
+  const origin = sender.origin;
+  if (tabId === undefined || !origin) return false;
+  const frame: Frame = { tabId, frameId: sender.frameId ?? 0 };
+  remember(origin, frame);
 
   void router
     .handle({ origin, method: env.method, params: env.params })
     .then((outcome) =>
-      toPage(origin, hostToPage(DEFAULT_CHANNEL, { kind: "response", id: env.id, ...outcome })),
+      toFrame(frame, hostToPage(DEFAULT_CHANNEL, { kind: "response", id: env.id, ...outcome })),
     );
 
   // The answer travels as its own message, so there is no async sendResponse.

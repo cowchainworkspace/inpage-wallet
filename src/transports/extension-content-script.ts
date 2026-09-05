@@ -5,9 +5,20 @@ import {
   type HostToPageEnvelope,
   type PageToHostEnvelope,
 } from "../protocol/envelope";
+import { originOf } from "../host/origin";
 
-/** What the isolated world hands the service worker: an envelope plus its origin. */
-export type WorkerBoundMessage = { origin: string; env: PageToHostEnvelope };
+/**
+ * What the isolated world hands the service worker: an envelope plus its origin.
+ * `tabId` and `frameId` are a passthrough for a relay that already knows them —
+ * a worker should prefer `sender.tab.id` and `sender.frameId`, which the page
+ * cannot influence.
+ */
+export type WorkerBoundMessage = {
+  origin: string;
+  env: PageToHostEnvelope;
+  tabId?: number | undefined;
+  frameId?: number | undefined;
+};
 
 export type ContentScriptRelayOptions = {
   channel?: string | undefined;
@@ -33,7 +44,11 @@ export function createContentScriptRelay(
   options: ContentScriptRelayOptions,
 ): ContentScriptRelay {
   const channel = options.channel ?? DEFAULT_CHANNEL;
-  const origin = window.location.origin;
+  // A sandboxed iframe, a data: or file: document and plain http all give an
+  // origin the host cannot key a session on — "null" is shared by every one of
+  // them. There is nothing safe to relay, so this frame gets no wallet at all.
+  const origin = originOf(window.location.href);
+  if (!origin) return { stop: () => {} };
 
   const toPage = (env: HostToPageEnvelope): void => {
     window.postMessage(env, origin);

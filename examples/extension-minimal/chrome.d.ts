@@ -5,12 +5,18 @@ declare const chrome: {
     sendMessage(message: unknown): Promise<unknown>;
     onMessage: {
       addListener(
-        listener: (message: unknown, sender: { tab?: { id?: number } }) => boolean | void,
+        listener: (
+          message: unknown,
+          sender: { origin?: string; frameId?: number; tab?: { id?: number } },
+        ) => boolean | void,
       ): void;
     };
   };
   tabs: {
-    sendMessage(tabId: number, message: unknown): Promise<unknown>;
-    query(query: { url?: string }): Promise<{ id?: number }[]>;
+    sendMessage(
+      tabId: number,
+      message: unknown,
+      options?: { frameId?: number },
+    ): Promise<unknown>;
   };
 };
