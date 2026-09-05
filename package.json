@@ -55,10 +55,11 @@
     "access": "public"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "bundle": "node scripts/bundle-inpage.mjs",
+    "typecheck": "pnpm run bundle && tsc --noEmit",
+    "test": "pnpm run bundle && vitest run",
     "test:watch": "vitest",
-    "build": "tsup",
+    "build": "pnpm run bundle && tsup",
     "size": "pnpm run build && size-limit",
     "prepare": "pnpm run build"
   },
