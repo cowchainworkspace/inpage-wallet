@@ -24,10 +24,37 @@ The page holds a thin provider that forwards calls. Session state, key material,
 and every user decision live on the host side. Correlation is by request id,
 generated in the page and echoed back.
 
+## Origin attribution
+
 **Origin is never read from the page.** The host stamps it: from
 `location.origin` in an extension's isolated world, or from the committed
 navigation in a WebView. While a navigation to a different origin is in flight
 the origin is null and requests arriving in that window are dropped.
+
+In an extension that is the whole story: the isolated world sees the frame it
+runs in, and the worker should attribute by `sender.origin`, `sender.tab.id` and
+`sender.frameId` rather than by anything in the message.
+
+**React Native needs more, and the nonce is not optional there.** On Android
+`ReactNativeWebView.postMessage` is exposed to *every* frame in the WebView,
+while the injected script runs main-frame only. A cross-origin iframe can
+therefore hand-roll an envelope and the host would attribute it to the top-level
+origin. The defence is a per-document nonce:
+
+- The host mints one nonce per document and builds the injected script with it.
+  The preamble keeps it in its closure and never writes it into
+  `window.__inpageWalletConfig`, so no page script can read it back.
+- Every page-to-host envelope carries it as `n`. The host drops any envelope
+  whose `n` does not match the nonce it committed alongside the current origin —
+  including every envelope before a nonce is committed.
+- Host-to-page delivery carries it too: `__inpageWalletReceive(env, nonce)`
+  ignores a call whose nonce is not the one this document was injected with, so
+  a response minted for a previous document reaches nothing.
+
+Origin and nonce are committed together, never separately. A host that has one
+without the other has no attribution and must drop the message.
+
+Payloads longer than 1,000,000 characters are dropped before parsing.
 
 ## Envelope
 
@@ -46,6 +73,9 @@ not the one it expects.
 | --------- | ------------------------------------------------- | ------- |
 | `ready`   | `families: ChainFamily[]`                         | The page installed providers and is listening. The host answers with `init`. |
 | `request` | `id: string`, `method: string`, `params?: any[]`  | One `provider.request()`. |
+
+Both also carry `n: string` on React Native — the per-document nonce described
+above. Other transports leave it absent.
 
 `id` is a `crypto.randomUUID()` where available, otherwise
 `r-<timestamp>-<random>`. It is opaque to the host.

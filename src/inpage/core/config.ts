@@ -27,6 +27,13 @@ export type InjectedConfig = {
   /** window.cardano key dApps enumerate. Defaults to a slug of identity.name. */
   cardanoWalletKey?: string | undefined;
   channel?: string | undefined;
+  /**
+   * React Native only, and required there. The preamble keeps it in its closure
+   * and stamps it on every envelope; it is never written into the page-readable
+   * config global. One per document, so a frame that hand-rolls an envelope
+   * cannot have it attributed to the top-level origin.
+   */
+  nonce?: string | undefined;
 };
 
 /** Neutral placeholder shown until the host delivers its own icon. */

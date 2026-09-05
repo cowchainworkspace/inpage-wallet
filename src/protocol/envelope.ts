@@ -26,7 +26,15 @@ export type HostToPage =
 
 export type Direction = "page-to-host" | "host-to-page";
 
-export type PageToHostEnvelope = { channel: string; direction: "page-to-host" } & PageToHost;
+/**
+ * `n` is the React Native per-document nonce. The preamble stamps it; every
+ * other transport leaves it absent.
+ */
+export type PageToHostEnvelope = {
+  channel: string;
+  direction: "page-to-host";
+  n?: string | undefined;
+} & PageToHost;
 export type HostToPageEnvelope = { channel: string; direction: "host-to-page" } & HostToPage;
 export type Envelope = PageToHostEnvelope | HostToPageEnvelope;
 

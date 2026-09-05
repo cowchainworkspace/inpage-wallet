@@ -27,30 +27,53 @@ export function availableBundles(): string[] {
 
 /**
  * There is no isolated world in a WebView, so this captures
- * `ReactNativeWebView.postMessage` before any page script can swap it. Defence in
- * depth only — origin is attributed natively, never read from the page. Exported
- * for hosts that register the chain bundles as files instead of inlining them.
+ * `ReactNativeWebView.postMessage` before any page script can swap it. On Android
+ * that bridge is exposed to every frame, so the preamble also stamps the
+ * per-document `nonce` — held in this closure, never in the page-readable config —
+ * on each envelope. The host drops anything carrying the wrong one. Exported for
+ * hosts that register the chain bundles as files instead of inlining them.
  */
 export function buildPreamble(config: InjectedConfig): string {
   const channel = config.channel ?? DEFAULT_CHANNEL;
+  const { nonce, ...pageConfig } = config;
   return `(function () {
+  var CHANNEL = ${JSON.stringify(channel)};
+  var NONCE = ${JSON.stringify(nonce ?? null)};
+
+  function lock(name, value) {
+    try {
+      Object.defineProperty(window, name, {
+        value: value, writable: false, configurable: false, enumerable: false
+      });
+    } catch (e) {}
+  }
+
+  // Written before the guard is read: a page that pre-sets the guard must not be
+  // able to leave its own config standing. Shallow freeze — a page script must
+  // not swap identity or channel before a bundle reads them.
+  lock(${JSON.stringify(RN_CONFIG)}, Object.freeze(${JSON.stringify(pageConfig)}));
+
   if (window.${RN_GUARD}) return;
   window.${RN_GUARD} = true;
 
   var native = window.ReactNativeWebView;
   var send = native && native.postMessage ? native.postMessage.bind(native) : null;
-  var CHANNEL = ${JSON.stringify(channel)};
 
-  // Shallow: a page script must not swap identity or channel before a bundle reads them.
-  window.${RN_CONFIG} = Object.freeze(${JSON.stringify(config)});
   window.${RN_DELIVER} = window.${RN_DELIVER} || {};
 
-  window.${RN_POST} = function (env) {
-    if (!send) return;
-    try { send(JSON.stringify(env)); } catch (e) {}
-  };
+  lock(${JSON.stringify(RN_POST)}, function (env) {
+    if (!send || !env) return;
+    try {
+      var out = {};
+      for (var k in env) {
+        if (Object.prototype.hasOwnProperty.call(env, k)) out[k] = env[k];
+      }
+      out.n = NONCE;
+      send(JSON.stringify(out));
+    } catch (e) {}
+  });
 
-  window.${RN_RECEIVE} = function (env) {
+  lock(${JSON.stringify(RN_RECEIVE)}, function (env) {
     if (!env || env.channel !== CHANNEL) return;
     var d = window.${RN_DELIVER};
     for (var key in d) {
@@ -58,7 +81,7 @@ export function buildPreamble(config: InjectedConfig): string {
         try { d[key](env); } catch (e) {}
       }
     }
-  };
+  });
 })();`;
 }
 

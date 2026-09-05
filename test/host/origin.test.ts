@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nextCommittedOrigin, originOf } from "../../src/host/origin";
+import { createNonce, nextCommittedNavigation, nextCommittedOrigin, originOf } from "../../src/host/origin";
 
 describe("originOf", () => {
   it("accepts https and drops everything else", () => {
@@ -40,5 +40,51 @@ describe("nextCommittedOrigin", () => {
 
   it("clears the origin when a non-https navigation commits", () => {
     expect(nextCommittedOrigin(A, { url: "about:blank", loading: false })).toBeNull();
+  });
+});
+
+describe("createNonce", () => {
+  it("does not repeat itself", () => {
+    const seen = new Set(Array.from({ length: 64 }, () => createNonce()));
+
+    expect(seen.size).toBe(64);
+    expect([...seen].every((n) => n.length >= 16)).toBe(true);
+  });
+});
+
+describe("nextCommittedNavigation", () => {
+  const A = "https://app.uniswap.org";
+  const B = "https://evil.example";
+
+  it("commits origin and nonce together", () => {
+    const next = nextCommittedNavigation(null, { url: `${A}/swap`, loading: false }, "n1");
+
+    expect(next).toEqual({ origin: A, nonce: "n1" });
+  });
+
+  it("mints a nonce when the host did not supply one", () => {
+    const next = nextCommittedNavigation(null, { url: A, loading: false });
+
+    expect(next?.nonce).toBeTypeOf("string");
+    expect(next?.nonce.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the pair while navigating within the same site", () => {
+    const current = { origin: A, nonce: "n1" };
+
+    expect(nextCommittedNavigation(current, { url: `${A}/pool`, loading: true }, "n2")).toBe(current);
+  });
+
+  it("has no attribution at all while a cross-origin navigation is in flight", () => {
+    expect(nextCommittedNavigation({ origin: A, nonce: "n1" }, { url: B, loading: true })).toBeNull();
+  });
+
+  it("gives the next document its own nonce", () => {
+    const first = nextCommittedNavigation(null, { url: A, loading: false });
+    const inFlight = nextCommittedNavigation(first, { url: B, loading: true });
+    const second = nextCommittedNavigation(inFlight, { url: B, loading: false });
+
+    expect(second?.origin).toBe(B);
+    expect(second?.nonce).not.toBe(first?.nonce);
   });
 });

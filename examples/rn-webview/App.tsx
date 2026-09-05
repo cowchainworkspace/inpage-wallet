@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import {
   WebView,
@@ -9,9 +9,11 @@ import {
 
 import {
   createDappRouter,
+  createNonce,
   layeredSessionStore,
-  nextCommittedOrigin,
+  nextCommittedNavigation,
   originOf,
+  type CommittedNavigation,
   type ConnectDecision,
   type LocalSessionCache,
   type SignRequest,
@@ -73,12 +75,16 @@ function describe(req: SignRequest): string {
 export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
   const ref = useRef<WebViewInstance | null>(null);
   // The security boundary: origin comes from the committed navigation, never
-  // from anything the page says about itself.
-  const committedOrigin = useRef<string | null>(originOf(uri));
+  // from anything the page says about itself. The nonce travels with it — on
+  // Android every frame can reach ReactNativeWebView.postMessage, so only the
+  // stamp the injected script carries tells the top-level document apart.
+  const committed = useRef<CommittedNavigation | null>(null);
+  const nonce = useRef(createNonce());
+  const [scriptNonce, setScriptNonce] = useState(nonce.current);
 
   const injected = useMemo(
-    () => buildInjectedScript({ identity: IDENTITY, networks: NETWORKS }),
-    [],
+    () => buildInjectedScript({ identity: IDENTITY, networks: NETWORKS, nonce: scriptNonce }),
+    [scriptNonce],
   );
 
   const transport = useMemo(
@@ -104,7 +110,7 @@ export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
           },
         },
         emit: (origin, event) => {
-          if (origin !== committedOrigin.current) return;
+          if (origin !== committed.current?.origin) return;
           transport.deliver(origin, hostToPage(DEFAULT_CHANNEL, { kind: "event", ...event }));
         },
         // Mobile keeps its own 90-second sheet timeout.
@@ -129,20 +135,36 @@ export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
 
   const onMessage = useCallback(
     (event: WebViewMessageEvent) => {
-      transport.receive(committedOrigin.current, event.nativeEvent.data);
+      transport.receive(committed.current?.origin ?? null, event.nativeEvent.data);
     },
     [transport],
   );
 
-  const onNavigationStateChange = useCallback((nav: WebViewNavigation) => {
-    committedOrigin.current = nextCommittedOrigin(committedOrigin.current, nav);
-  }, []);
+  const onNavigationStateChange = useCallback(
+    (nav: WebViewNavigation) => {
+      // A load starting on a different site gets its own nonce, so the document
+      // that replaces this one cannot reuse its stamp. If the prop update loses
+      // the race with the load, that document is simply ignored — the failure is
+      // a page with no wallet, never a page speaking for another origin.
+      if (nav.loading && committed.current && originOf(nav.url) !== committed.current.origin) {
+        nonce.current = createNonce();
+        setScriptNonce(nonce.current);
+      }
+      const next = nextCommittedNavigation(committed.current, nav, nonce.current);
+      committed.current = next;
+      transport.setNonce(next?.nonce ?? null);
+    },
+    [transport],
+  );
 
   return (
     <View style={{ flex: 1 }}>
       <WebView
         ref={ref}
         source={{ uri }}
+        // The default, and it must stay on: the nonce only means anything while
+        // the script is the main frame's alone.
+        injectedJavaScriptForMainFrameOnly
         injectedJavaScriptBeforeContentLoaded={injected}
         onMessage={onMessage}
         onNavigationStateChange={onNavigationStateChange}

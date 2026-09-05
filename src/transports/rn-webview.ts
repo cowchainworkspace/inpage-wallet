@@ -80,17 +80,27 @@ export type RnHostTransportOptions = {
   channel?: string | undefined;
 };
 
+/** Above any legitimate envelope, and small enough that parsing one cannot stall. */
+export const MAX_ENVELOPE_BYTES = 1_000_000;
+
 export type RnHostTransport = HostTransport & {
   /**
    * Feed WebView `onMessage` payloads in. `origin` is the committed navigation
    * origin: pass null while a navigation is in flight and the message is dropped.
    */
   receive(origin: string | null, data: string): void;
+  /**
+   * The nonce the current document was injected with, or null between documents.
+   * Until one is set nothing is accepted: on Android every frame can reach
+   * `ReactNativeWebView.postMessage`, and only the injected script knows this.
+   */
+  setNonce(nonce: string | null): void;
 };
 
 export function createRnHostTransport(options: RnHostTransportOptions): RnHostTransport {
   const channel = options.channel ?? DEFAULT_CHANNEL;
   const handlers: ((origin: string, env: PageToHostEnvelope) => void)[] = [];
+  let nonce: string | null = null;
 
   return {
     deliver(_origin: string, env: HostToPageEnvelope): void {
@@ -99,8 +109,12 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
     onMessage(handler): void {
       handlers.push(handler);
     },
+    setNonce(next): void {
+      nonce = next;
+    },
     receive(origin, data): void {
-      if (!origin) return;
+      if (!origin || !nonce) return;
+      if (typeof data !== "string" || data.length > MAX_ENVELOPE_BYTES) return;
       let parsed: unknown;
       try {
         parsed = JSON.parse(data);
@@ -108,6 +122,7 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
         return;
       }
       if (!isPageToHost(parsed, channel)) return;
+      if (parsed.n !== nonce) return;
       for (const handler of handlers) handler(origin, parsed);
     },
   };

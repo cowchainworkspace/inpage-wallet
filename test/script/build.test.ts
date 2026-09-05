@@ -1,32 +1,53 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { buildDeliveryScript, buildInjectedScript } from "../../src/script/build";
+import { buildDeliveryScript, buildInjectedScript, buildPreamble } from "../../src/script/build";
 import { DEFAULT_CHANNEL, hostToPage } from "../../src/protocol/envelope";
-import { resetWindowListeners } from "../inpage/dom";
 import { configFor, IDENTITY } from "../inpage/fake-transport";
 
-type Announced = { info: { rdns: string; uuid: string } };
+const NONCE = "8f1c0b3a-5d2e-4a67-9b81-0c1d2e3f4a5b";
+
+type Announced = {
+  info: { rdns: string; uuid: string };
+  provider: { request(a: { method: string }): Promise<unknown> };
+};
 
 type RnWindow = Window & {
   ReactNativeWebView?: { postMessage: (data: string) => void };
-  __inpageWalletBridge?: boolean;
-  __inpageWalletInstalled?: Record<string, boolean>;
+  __inpageWalletConfig?: { identity: { rdns: string } };
+  __inpageWalletPost?: (env: unknown) => void;
+  eval(script: string): unknown;
 };
 
-function run(script: string): void {
-  new Function(script).call(window);
+type Page = { win: RnWindow; posted: string[]; announced: Announced[] };
+
+/**
+ * The preamble locks its globals to the document it ran in, so each case gets a
+ * document of its own — which is also the only shape a real page ever sees.
+ */
+function freshPage(): Page {
+  const frame = document.createElement("iframe");
+  document.body.appendChild(frame);
+  const win = frame.contentWindow as RnWindow | null;
+  if (!win) throw new Error("the iframe has no window");
+
+  const posted: string[] = [];
+  const announced: Announced[] = [];
+  win.ReactNativeWebView = { postMessage: (data: string) => void posted.push(data) };
+  win.addEventListener("eip6963:announceProvider", (event) => {
+    announced.push((event as CustomEvent<Announced>).detail);
+  });
+  return { win, posted, announced };
 }
 
-const rn = window as RnWindow;
-
-beforeEach(() => {
-  resetWindowListeners();
-  rn.__inpageWalletBridge = false;
-  rn.__inpageWalletInstalled = {};
-});
+function frozenConfigLiteral(script: string): string {
+  const start = script.indexOf("Object.freeze(");
+  const end = script.indexOf("));", start);
+  if (start < 0 || end < 0) throw new Error("no frozen config in the preamble");
+  return script.slice(start, end);
+}
 
 describe("buildInjectedScript", () => {
   it("produces script the page can execute", () => {
@@ -56,18 +77,13 @@ describe("buildInjectedScript", () => {
   });
 
   it("announces over EIP-6963 and posts through the captured bridge", () => {
-    const postMessage = vi.fn();
-    rn.ReactNativeWebView = { postMessage };
-    const announced: Announced[] = [];
-    window.addEventListener("eip6963:announceProvider", (e) => {
-      announced.push((e as CustomEvent<Announced>).detail);
-    });
+    const page = freshPage();
 
-    run(buildInjectedScript(configFor(["evm"])));
+    page.win.eval(buildInjectedScript(configFor(["evm"])));
 
-    expect(announced).toHaveLength(1);
-    expect(announced[0]?.info.rdns).toBe(IDENTITY.rdns);
-    expect(JSON.parse(postMessage.mock.calls[0]?.[0] as string)).toEqual({
+    expect(page.announced).toHaveLength(1);
+    expect(page.announced[0]?.info.rdns).toBe(IDENTITY.rdns);
+    expect(JSON.parse(page.posted[0] ?? "null")).toMatchObject({
       channel: DEFAULT_CHANNEL,
       direction: "page-to-host",
       kind: "ready",
@@ -76,21 +92,13 @@ describe("buildInjectedScript", () => {
   });
 
   it("round-trips a request through the delivery script", async () => {
-    const postMessage = vi.fn();
-    rn.ReactNativeWebView = { postMessage };
-    const announced: (Announced & {
-      provider: { request(a: { method: string }): Promise<unknown> };
-    })[] = [];
-    window.addEventListener("eip6963:announceProvider", (e) => {
-      announced.push((e as CustomEvent).detail);
-    });
+    const page = freshPage();
+    page.win.eval(buildInjectedScript(configFor(["evm"])));
 
-    run(buildInjectedScript(configFor(["evm"])));
+    const pending = page.announced[0]?.provider.request({ method: "eth_accounts" });
+    const sent = JSON.parse(page.posted[1] ?? "null") as { id: string };
 
-    const pending = announced[0]?.provider.request({ method: "eth_accounts" });
-    const sent = JSON.parse(postMessage.mock.calls[1]?.[0] as string) as { id: string };
-
-    run(
+    page.win.eval(
       buildDeliveryScript(
         hostToPage(DEFAULT_CHANNEL, { kind: "response", id: sent.id, result: ["0xabc"] }),
       ),
@@ -100,17 +108,13 @@ describe("buildInjectedScript", () => {
   });
 
   it("is idempotent: a second injection installs nothing new", () => {
-    rn.ReactNativeWebView = { postMessage: vi.fn() };
-    const announced: Announced[] = [];
-    window.addEventListener("eip6963:announceProvider", (e) => {
-      announced.push((e as CustomEvent<Announced>).detail);
-    });
-
+    const page = freshPage();
     const script = buildInjectedScript(configFor(["evm"]));
-    run(script);
-    run(script);
 
-    expect(announced).toHaveLength(1);
+    page.win.eval(script);
+    page.win.eval(script);
+
+    expect(page.announced).toHaveLength(1);
   });
 });
 
@@ -119,5 +123,60 @@ describe("buildDeliveryScript", () => {
     const script = buildDeliveryScript(hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "x" }));
 
     expect(script.trim().endsWith("true;")).toBe(true);
+  });
+});
+
+describe("preamble nonce", () => {
+  it("keeps the nonce out of the config the page can read", () => {
+    const script = buildPreamble({ ...configFor(["evm"]), nonce: NONCE });
+
+    expect(frozenConfigLiteral(script)).not.toContain(NONCE);
+    expect(script).toContain(NONCE);
+  });
+
+  it("leaves no nonce on the config global at runtime", () => {
+    const { win } = freshPage();
+
+    win.eval(buildPreamble({ ...configFor(["evm"]), nonce: NONCE }));
+
+    expect(win.__inpageWalletConfig).toBeDefined();
+    expect(JSON.stringify(win.__inpageWalletConfig)).not.toContain(NONCE);
+  });
+
+  it("stamps the nonce on every envelope it posts", () => {
+    const { win, posted } = freshPage();
+
+    win.eval(buildPreamble({ ...configFor(["evm"]), nonce: NONCE }));
+    win.__inpageWalletPost?.({ channel: DEFAULT_CHANNEL, direction: "page-to-host", kind: "ready" });
+
+    expect(JSON.parse(posted[0] ?? "null")).toMatchObject({ kind: "ready", n: NONCE });
+  });
+
+  it("posts a null stamp when the host configured no nonce", () => {
+    const { win, posted } = freshPage();
+
+    win.eval(buildPreamble(configFor(["evm"])));
+    win.__inpageWalletPost?.({ channel: DEFAULT_CHANNEL, direction: "page-to-host", kind: "ready" });
+
+    expect(JSON.parse(posted[0] ?? "null").n).toBeNull();
+  });
+
+  it("locks its globals against a page script that runs later", () => {
+    const { win } = freshPage();
+
+    win.eval(buildPreamble({ ...configFor(["evm"]), nonce: NONCE }));
+    const original = win.__inpageWalletPost;
+    win.eval("try { window.__inpageWalletPost = function () {}; } catch (e) {}");
+
+    expect(win.__inpageWalletPost).toBe(original);
+  });
+
+  it("keeps its own config when a page pre-sets the install guard", () => {
+    const { win } = freshPage();
+
+    win.eval("window.__inpageWalletBridge = true; window.__inpageWalletConfig = { identity: {} };");
+    win.eval(buildPreamble({ ...configFor(["evm"]), nonce: NONCE }));
+
+    expect(win.__inpageWalletConfig?.identity.rdns).toBe(IDENTITY.rdns);
   });
 });

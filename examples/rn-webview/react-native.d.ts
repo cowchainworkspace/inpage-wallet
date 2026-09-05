@@ -14,6 +14,7 @@ declare module "react" {
   export function useCallback<T>(fn: T, deps: unknown[]): T;
   export function useMemo<T>(factory: () => T, deps: unknown[]): T;
   export function useRef<T>(initial: T): { current: T };
+  export function useState<T>(initial: T | (() => T)): [T, (next: T) => void];
 }
 
 declare module "react-native" {

@@ -84,24 +84,36 @@ bundle per family you registered. See `examples/rn-webview`.
 ```tsx
 import { buildInjectedScript } from "inpage-wallet/script";
 import { createRnHostTransport } from "inpage-wallet/transports/rn-webview";
-import { createDappRouter, nextCommittedOrigin, originOf } from "inpage-wallet/host";
+import { createDappRouter, createNonce, nextCommittedNavigation } from "inpage-wallet/host";
 
-const injected = buildInjectedScript({ identity: IDENTITY, networks: NETWORKS });
+// One nonce per document, so the script is rebuilt per navigation — never memoised once.
+const injected = buildInjectedScript({ identity: IDENTITY, networks: NETWORKS, nonce });
 const transport = createRnHostTransport({ inject: (s) => ref.current?.injectJavaScript(s) });
 
 <WebView
+  injectedJavaScriptForMainFrameOnly           // the default; leave it on
   injectedJavaScriptBeforeContentLoaded={injected}
-  onMessage={(e) => transport.receive(committedOrigin.current, e.nativeEvent.data)}
+  onMessage={(e) => transport.receive(committed.current?.origin ?? null, e.nativeEvent.data)}
   onNavigationStateChange={(nav) => {
-    committedOrigin.current = nextCommittedOrigin(committedOrigin.current, nav);
+    committed.current = nextCommittedNavigation(committed.current, nav, nonce);
+    transport.setNonce(committed.current?.nonce ?? null);
   }}
 />;
 ```
 
 Origin comes from the committed navigation, never from anything the page says
-about itself. `nextCommittedOrigin` returns null while a navigation to a
+about itself. `nextCommittedNavigation` returns null while a navigation to a
 different site is in flight, so one site's injected script cannot inherit
 another's session.
+
+**The nonce is required on React Native, not optional.** On Android
+`ReactNativeWebView.postMessage` is exposed to every frame in the WebView, while
+the injected script runs main-frame only — so without it a cross-origin iframe
+can hand-roll an envelope and have the host attribute it to the top-level
+origin. The preamble keeps the nonce in its closure, out of the page-readable
+config, and stamps it on every envelope; the transport drops anything that does
+not carry the nonce committed alongside the current origin, including everything
+before `setNonce` is called. See `examples/rn-webview` for the whole loop.
 
 ## Identity
 

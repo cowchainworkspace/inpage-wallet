@@ -1,5 +1,11 @@
 export { classifyForHost, readRpcAllows, type ReadRpcPolicy } from "./classify";
-export { nextCommittedOrigin, originOf } from "./origin";
+export {
+  createNonce,
+  nextCommittedNavigation,
+  nextCommittedOrigin,
+  originOf,
+  type CommittedNavigation,
+} from "./origin";
 export { parseTypedData, type Eip712Tree, type TypedDataField } from "./models/eip712";
 export { summarizeEvmTx, type EvmTxSummary } from "./models/evm-tx";
 export {
