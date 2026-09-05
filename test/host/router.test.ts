@@ -466,6 +466,124 @@ describe("signing", () => {
   });
 });
 
+describe("an account the session never granted", () => {
+  const OTHER_EVM = "0xdead000000000000000000000000000000000001";
+  const REFUSED = { error: { code: 4100, message: "Account is not in this session" } };
+
+  it("refuses personal_sign for another address", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "personal_sign",
+      params: ["0xdeadbeef", OTHER_EVM],
+    });
+
+    expect(out).toEqual(REFUSED);
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("refuses eth_sign for another address", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_sign",
+      params: [OTHER_EVM, "0xdeadbeef"],
+    });
+
+    expect(out).toEqual(REFUSED);
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("refuses a transaction sent from another address", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_sendTransaction",
+      params: [{ from: OTHER_EVM, to: EVM_ADDRESS, value: "0x1" }],
+    });
+
+    expect(out).toEqual(REFUSED);
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("refuses typed data addressed to another account, in either param order", async () => {
+    h = harness([session({ family: "evm" })]);
+    const typed = JSON.stringify({ primaryType: "Permit", message: { value: "1" } });
+
+    expect(
+      await h.router.handle({
+        origin: ORIGIN,
+        method: "eth_signTypedData_v4",
+        params: [OTHER_EVM, typed],
+      }),
+    ).toEqual(REFUSED);
+    expect(
+      await h.router.handle({
+        origin: ORIGIN,
+        method: "eth_signTypedData_v4",
+        params: [typed, OTHER_EVM],
+      }),
+    ).toEqual(REFUSED);
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("accepts an EVM address that differs only in checksum case", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "personal_sign",
+      params: ["0xdeadbeef", EVM_ADDRESS.toUpperCase().replace("0X", "0x")],
+    });
+
+    expect(out).toEqual({ result: "0xsigned" });
+  });
+
+  it("refuses a Solana account outside the session", async () => {
+    h = harness([session({ family: "solana" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "solana_signTransaction",
+      params: [{ tx: [1, 2, 3], account: "SoNotTheGrantedAccount11111111111111111111111" }],
+    });
+
+    expect(out).toEqual(REFUSED);
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("compares a Cardano address exactly, case and all", async () => {
+    h = harness([session({ family: "cardano", accounts: ["addr1qxyz"] })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "cardano_signData",
+      params: [{ address: "ADDR1QXYZ", payload: "0xab" }],
+    });
+
+    expect(out).toEqual(REFUSED);
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("refuses a BTC address the page named for itself", async () => {
+    h = harness([session({ family: "btc", accounts: ["bc1qgranted"] })], {
+      networks: [...NETWORKS, { id: "btc_main", family: "btc", name: "Bitcoin", wire: {} }],
+    });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "btc_signMessage",
+      params: [{ message: "hello", address: "bc1qattacker" }],
+    });
+
+    expect(out).toEqual(REFUSED);
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+});
+
 describe("solana", () => {
   it("never opens UI for a silent connect with no session", async () => {
     const out = await h.router.handle({

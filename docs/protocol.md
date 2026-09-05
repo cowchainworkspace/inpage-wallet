@@ -194,6 +194,13 @@ the new hex id.
 Signing requires a session; without one the answer is `4100`. What the host
 returns is passed back to the page unchanged.
 
+**The account is a claim, not a fact.** Wherever a sign request names one —
+`personal_sign` `params[1]`, `eth_sign` `params[0]`, the typed-data address,
+`tx.from`, `account` or `address` on a params object — the page chose it. The
+router rejects it with `4100` ("Account is not in this session") before any UI
+when it is not one of the session's accounts. EVM addresses compare
+case-insensitively; every other family's compare exactly.
+
 Wire shapes worth stating:
 
 | method | params | result |

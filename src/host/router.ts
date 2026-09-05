@@ -2,6 +2,7 @@ import type { ProviderEvent } from "../protocol/envelope";
 import {
   RPC_CHAIN_NOT_ADDED,
   RPC_INTERNAL,
+  RPC_UNAUTHORIZED,
   rpcError,
   toRpcError,
   unauthorized,
@@ -188,6 +189,50 @@ function asString(value: unknown): string {
 
 function asBytes(value: unknown): number[] {
   return Array.isArray(value) ? (value as number[]) : [];
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * The account the page named for itself. The page picks it freely, so it is a
+ * claim, not a fact: it has to be checked against the session before anything
+ * reaches the UI, or a dApp can have the wallet sign with an account the user
+ * never granted it.
+ */
+function accountClaimedBy(method: string, params: unknown[]): string | null {
+  switch (method) {
+    case "personal_sign":
+      return nonEmptyString(params[1]);
+    case "eth_sign":
+      return nonEmptyString(params[0]);
+    case "eth_signTypedData":
+    case "eth_signTypedData_v3":
+    case "eth_signTypedData_v4": {
+      // Wallets receive [address, json]; a few dApps still send [json, address].
+      const first = nonEmptyString(params[0]);
+      if (first && EVM_ADDRESS.test(first)) return first;
+      const second = nonEmptyString(params[1]);
+      return second && EVM_ADDRESS.test(second) ? second : null;
+    }
+    case "eth_sendTransaction":
+    case "eth_signTransaction":
+      return nonEmptyString(asRecord(params[0]).from);
+    default: {
+      const p0 = asRecord(params[0]);
+      return nonEmptyString(p0.account) ?? nonEmptyString(p0.address);
+    }
+  }
+}
+
+/** EVM addresses are case-insensitive; every other family's are not. */
+function sessionHasAccount(session: Session, family: ChainFamily, account: string): boolean {
+  if (family !== "evm") return session.accounts.includes(account);
+  const wanted = account.toLowerCase();
+  return session.accounts.some((a) => a.toLowerCase() === wanted);
 }
 
 export function createDappRouter(deps: RouterDeps): DappRouter {
@@ -546,6 +591,11 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
   ): Promise<RouterOutcome> {
     const session = await deps.sessions.get(origin, family);
     if (!session || session.accounts.length === 0) return { error: unauthorized() };
+
+    const claimed = accountClaimedBy(method, params);
+    if (claimed !== null && !sessionHasAccount(session, family, claimed)) {
+      return { error: rpcError(RPC_UNAUTHORIZED, "Account is not in this session") };
+    }
 
     const request = buildSignRequest(method, {
       origin,
