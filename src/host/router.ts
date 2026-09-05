@@ -27,6 +27,8 @@ export type ConnectRequest = {
   /** The network that will back the session unless the decision names another. */
   network: NetworkDef | null;
   raw: unknown[];
+  /** Aborts when the request is cancelled or times out: close the modal. */
+  signal: AbortSignal;
 };
 
 export type ConnectDecision = {
@@ -49,6 +51,8 @@ export type SwitchChainRequest = {
   network: NetworkDef | null;
   session: Session | null;
   raw: unknown[];
+  /** Aborts when the request is cancelled or times out: close the modal. */
+  signal: AbortSignal;
 };
 
 export type AddChainRequest = {
@@ -56,6 +60,8 @@ export type AddChainRequest = {
   method: string;
   chainId: string;
   raw: unknown[];
+  /** Aborts when the request is cancelled or times out: close the modal. */
+  signal: AbortSignal;
 };
 
 type SignBase = {
@@ -63,6 +69,8 @@ type SignBase = {
   session: Session;
   network: NetworkDef | null;
   raw: unknown[];
+  /** Aborts when the request is cancelled or times out: close the modal. */
+  signal: AbortSignal;
 };
 
 export type SignRequest =
@@ -208,15 +216,20 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     if (set.size === 0) inFlight.delete(origin);
   };
 
-  const decide = <T>(_origin: string, work: () => Promise<T>): Promise<T> =>
-    withTimeout(work, timeoutMs);
+  const decide = <T>(controller: AbortController, work: () => Promise<T>): Promise<T> =>
+    withTimeout(work, timeoutMs, controller);
 
   /**
    * Every request is registered from the moment it arrives, not from the moment
-   * it reaches the modal: a tab closing mid-lookup must still get an answer.
+   * it reaches the modal: a tab closing mid-lookup must still get an answer. The
+   * controller is how the answer reaches the UI the request already opened.
    */
-  function guard(origin: string, work: () => Promise<RouterOutcome>): Promise<RouterOutcome> {
+  function guard(
+    origin: string,
+    work: (controller: AbortController) => Promise<RouterOutcome>,
+  ): Promise<RouterOutcome> {
     return new Promise<RouterOutcome>((resolve) => {
+      const controller = new AbortController();
       let settled = false;
       const finish = (outcome: RouterOutcome): void => {
         if (settled) return;
@@ -224,9 +237,14 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
         untrack(origin)(control);
         resolve(outcome);
       };
-      const control: Cancellable = { cancel: (reason) => finish({ error: reason }) };
+      const control: Cancellable = {
+        cancel: (reason) => {
+          controller.abort();
+          finish({ error: reason });
+        },
+      };
       track(origin)(control);
-      work().then(
+      work(controller).then(
         (outcome) => finish(outcome),
         (error: unknown) => finish({ error: toRpcError(error) }),
       );
@@ -309,6 +327,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     family: ChainFamily,
     method: string,
     params: unknown[],
+    controller: AbortController,
   ): Promise<RouterOutcome> {
     const existing = await deps.sessions.get(origin, family);
     if (silentReconnect && existing && existing.accounts.length > 0) {
@@ -320,9 +339,18 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     if (silent) return { result: null };
 
     const fallback = defaultNetwork(family);
-    const decision = await decide(origin, () =>
-      deps.ui.connect({ origin, family, method, network: fallback, raw: params }),
+    const decision = await decide(controller, () =>
+      deps.ui.connect({
+        origin,
+        family,
+        method,
+        network: fallback,
+        raw: params,
+        signal: controller.signal,
+      }),
     );
+    // A decision that arrives after the request was cancelled changes nothing.
+    if (controller.signal.aborted) return { error: userRejected() };
     if (!decision || decision.accounts.length === 0) return { error: userRejected() };
 
     const chosen = networkById(networks, decision.networkId) ?? fallback;
@@ -355,11 +383,12 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     family: ChainFamily,
     method: string,
     params: unknown[],
+    controller: AbortController,
   ): Promise<RouterOutcome> {
     const key = `${origin}|${family}`;
     const running = connecting.get(key);
     if (running) return running;
-    const started = runConnect(origin, family, method, params).finally(() => {
+    const started = runConnect(origin, family, method, params, controller).finally(() => {
       connecting.delete(key);
     });
     connecting.set(key, started);
@@ -372,6 +401,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     origin: string,
     method: string,
     params: unknown[],
+    controller: AbortController,
   ): Promise<RouterOutcome> {
     const target = firstParam<{ chainId?: string }>(params)?.chainId?.toLowerCase();
     if (!target) return { error: rpcError(RPC_CHAIN_NOT_ADDED, "Unrecognized chain ID") };
@@ -389,9 +419,10 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
         return { error: rpcError(RPC_CHAIN_NOT_ADDED, "Unrecognized chain ID") };
       }
       const askToAdd = deps.ui.addChain;
-      const added = await decide(origin, () =>
-        askToAdd({ origin, method, chainId: target, raw: params }),
+      const added = await decide(controller, () =>
+        askToAdd({ origin, method, chainId: target, raw: params, signal: controller.signal }),
       );
+      if (controller.signal.aborted) return { error: userRejected() };
       if (!added) return { error: rpcError(RPC_CHAIN_NOT_ADDED, "Unrecognized chain ID") };
       networks.push(added);
       network = added;
@@ -400,9 +431,18 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     const askToSwitch = deps.ui.switchChain;
     if (askToSwitch) {
       const resolved = network;
-      const approved = await decide(origin, () =>
-        askToSwitch({ origin, method, chainId: target, network: resolved, session, raw: params }),
+      const approved = await decide(controller, () =>
+        askToSwitch({
+          origin,
+          method,
+          chainId: target,
+          network: resolved,
+          session,
+          raw: params,
+          signal: controller.signal,
+        }),
       );
+      if (controller.signal.aborted) return { error: userRejected() };
       if (!approved) return { error: userRejected() };
     }
 
@@ -502,6 +542,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     family: ChainFamily,
     method: string,
     params: unknown[],
+    controller: AbortController,
   ): Promise<RouterOutcome> {
     const session = await deps.sessions.get(origin, family);
     if (!session || session.accounts.length === 0) return { error: unauthorized() };
@@ -511,11 +552,13 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
       session,
       network: networkOf(session, family),
       raw: params,
+      signal: controller.signal,
     }, params);
     if (!request) return { error: unsupportedMethod(method) };
 
     try {
-      const result = await decide(origin, () => deps.ui.sign(request));
+      const result = await decide(controller, () => deps.ui.sign(request));
+      if (controller.signal.aborted) return { error: userRejected() };
       await deps.sessions.set({ ...session, lastUsedAt: Date.now() });
       return { result };
     } catch (error) {
@@ -552,7 +595,10 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     return doomed.length;
   }
 
-  async function route(req: ProviderRequest): Promise<RouterOutcome> {
+  async function route(
+    req: ProviderRequest,
+    controller: AbortController,
+  ): Promise<RouterOutcome> {
     const params = req.params ?? [];
     const { kind, family } = classifyForHost(req.method, readRpc);
 
@@ -590,21 +636,21 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
         }
       }
       case "connect":
-        return connect(req.origin, family, req.method, params);
+        return connect(req.origin, family, req.method, params, controller);
       case "disconnect":
         await clearSession(req.origin, family);
         emitFor(req.origin, family, "accountsChanged", []);
         return { result: null };
       case "switch":
-        return switchChain(req.origin, req.method, params);
+        return switchChain(req.origin, req.method, params, controller);
       case "sign":
-        return sign(req.origin, family, req.method, params);
+        return sign(req.origin, family, req.method, params, controller);
     }
   }
 
   return {
     handle(req) {
-      return guard(req.origin, () => route(req));
+      return guard(req.origin, (controller) => route(req, controller));
     },
 
     async disconnect(origin, family) {

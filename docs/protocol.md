@@ -199,3 +199,8 @@ Every request is tracked from the moment it arrives. It is answered when the hos
 decides, when the policy timeout elapses (`4001`), or when the host cancels it —
 a closed tab, a disconnect, a session revoked on another device. A page is never
 left waiting on a promise nobody will settle.
+
+Each request the host's UI receives carries an `AbortSignal`, aborted at that
+same moment, so the host can close the modal it opened. A decision that arrives
+after the abort is discarded: no session is written, no network is registered,
+no event is emitted.

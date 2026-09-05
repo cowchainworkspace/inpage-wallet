@@ -10,9 +10,14 @@ export const TIMED_OUT: RpcError = rpcError(
 
 /**
  * A wait on a UI callback can never outlive the policy timeout — a modal nobody
- * answers would otherwise leave the page hanging forever.
+ * answers would otherwise leave the page hanging forever. The controller, when
+ * given, is aborted as the timeout fires so the host can dismiss that modal.
  */
-export function withTimeout<T>(work: () => Promise<T>, timeoutMs: number): Promise<T> {
+export function withTimeout<T>(
+  work: () => Promise<T>,
+  timeoutMs: number,
+  controller?: AbortController,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     const finish = (apply: () => void): void => {
@@ -21,7 +26,14 @@ export function withTimeout<T>(work: () => Promise<T>, timeoutMs: number): Promi
       clearTimeout(timer);
       apply();
     };
-    const timer = setTimeout(() => finish(() => reject(TIMED_OUT)), timeoutMs);
+    const timer = setTimeout(
+      () =>
+        finish(() => {
+          controller?.abort();
+          reject(TIMED_OUT);
+        }),
+      timeoutMs,
+    );
 
     let started: Promise<T>;
     try {

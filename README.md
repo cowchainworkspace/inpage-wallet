@@ -59,14 +59,21 @@ const router = createDappRouter({
   networks: NETWORKS,
   sessions: layeredSessionStore({ local: chromeStorageSessions, remote: api.dappSessions }),
   ui: {
-    connect: (req) => openConfirmationWindow("connect", req),
-    sign: (req) => openConfirmationWindow("sign", req),
+    // req.signal aborts when the tab closes, the session is revoked, or the
+    // policy timeout fires: wire it to close the window.
+    connect: (req) => openConfirmationWindow("connect", req, req.signal),
+    sign: (req) => openConfirmationWindow("sign", req, req.signal),
   },
   rpc: evmRpc,
   emit: (origin, event) => broadcastToTabs(origin, event),
   policy: { requestTimeoutMs: 180_000 },
 });
 ```
+
+Every UI callback receives `req.signal`. It aborts when the request is answered
+without the user — a closed tab, a disconnect, the policy timeout — so wire it to
+close the modal. Whatever a modal resolves after that point is discarded: no
+session is written, no event is emitted.
 
 ## Quickstart: React Native WebView
 

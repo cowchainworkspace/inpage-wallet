@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createDappRouter,
   type ConnectDecision,
+  type ConnectRequest,
   type DappRouter,
   type RouterDeps,
   type SignRequest,
@@ -38,6 +39,9 @@ function session(over: Partial<Session> & Pick<Session, "family">): Session {
     ...over,
   };
 }
+
+/** Let every pending continuation run before asserting on side effects. */
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 type Harness = {
   router: DappRouter;
@@ -540,6 +544,79 @@ describe("disconnect and tab close", () => {
     expect(await a).toMatchObject({ error: { code: 4001 } });
     expect(await b).toMatchObject({ error: { code: 4001 } });
     expect(h.router.rejectAll(ORIGIN)).toBe(0);
+  });
+
+  it("ignores a connect decision that arrives after rejectAll", async () => {
+    let release!: (decision: ConnectDecision) => void;
+    h.connect.mockImplementation(
+      () =>
+        new Promise<ConnectDecision>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    const pending = h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+    await flush();
+    expect(h.router.rejectAll(ORIGIN)).toBe(1);
+    release({ accounts: [EVM_ADDRESS] });
+
+    expect(await pending).toMatchObject({ error: { code: 4001 } });
+    await flush();
+    expect(await h.sessions.get(ORIGIN, "evm")).toBeNull();
+    expect(h.events).toEqual([]);
+  });
+
+  it("ignores a signature that arrives after disconnect", async () => {
+    h = harness([session({ family: "evm" })]);
+    let release!: (signature: string) => void;
+    h.sign.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    const pending = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
+    await flush();
+    await h.router.disconnect(ORIGIN, "evm");
+    release("0xsigned");
+
+    expect(await pending).toMatchObject({ error: { code: 4001 } });
+    await flush();
+    // A resurrected session is how a late lastUsedAt write would show up.
+    expect(await h.sessions.get(ORIGIN, "evm")).toBeNull();
+  });
+
+  it("aborts the signal it handed the modal when the tab closes", async () => {
+    h.connect.mockImplementation(() => new Promise<ConnectDecision>(() => {}));
+
+    const pending = h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+    await flush();
+    const req = h.connect.mock.calls[0]?.[0] as ConnectRequest;
+    expect(req.signal.aborted).toBe(false);
+
+    h.router.rejectAll(ORIGIN);
+
+    expect(req.signal.aborted).toBe(true);
+    expect(await pending).toMatchObject({ error: { code: 4001 } });
+  });
+
+  it("aborts the signal when the policy timeout fires", async () => {
+    vi.useFakeTimers();
+    try {
+      h = harness([], { policy: { requestTimeoutMs: 1000 } });
+      h.connect.mockImplementation(() => new Promise<ConnectDecision>(() => {}));
+
+      const pending = h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+      await vi.advanceTimersByTimeAsync(0);
+      const req = h.connect.mock.calls[0]?.[0] as ConnectRequest;
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(req.signal.aborted).toBe(true);
+      expect(await pending).toMatchObject({ error: { code: 4001 } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("emits disconnect when the store reports a session that ended elsewhere", async () => {
