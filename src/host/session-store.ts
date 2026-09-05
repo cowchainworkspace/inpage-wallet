@@ -104,28 +104,55 @@ export function layeredSessionStore(deps: {
     announce(withId.origin, withId.family, withId);
   };
 
+  /** Remote writes that failed, keyed by session, drained by the next reconcile. */
+  const pending = new Map<string, { op: "upsert" | "remove"; session: Session }>();
+
+  /** One retry each; whatever still fails waits for the reconcile after this one. */
+  const drainPending = async (): Promise<void> => {
+    for (const [key, item] of [...pending]) {
+      pending.delete(key);
+      try {
+        if (item.op === "remove") {
+          await remote?.remove?.(item.session);
+          continue;
+        }
+        const current = local.get(item.session.origin, item.session.family);
+        if (current) await pushRemote(current);
+      } catch {
+        pending.set(key, item);
+      }
+    }
+  };
+
   return {
     get: async (origin, family) => local.get(origin, family),
 
     set: async (session) => {
+      const key = sessionKey(session.origin, session.family);
       local.set(session);
       announce(session.origin, session.family, session);
       try {
         await pushRemote(session);
+        pending.delete(key);
       } catch {
-        /* the backend catches up later; the local write already stands */
+        /* the local write stands; retried on the next reconcile */
+        pending.set(key, { op: "upsert", session });
       }
     },
 
     clear: async (origin, family) => {
+      const key = sessionKey(origin, family);
       const existing = local.get(origin, family);
       local.clear(origin, family);
       announce(origin, family, null);
+      // A queued upsert for a session that no longer exists has nothing to say.
+      pending.delete(key);
       if (!existing || !remote?.remove) return;
       try {
         await remote.remove(existing);
       } catch {
-        /* the backend catches up later */
+        /* the local clear stands; retried on the next reconcile */
+        pending.set(key, { op: "remove", session: existing });
       }
     },
 
@@ -137,6 +164,7 @@ export function layeredSessionStore(deps: {
     },
 
     reconcile: async () => {
+      await drainPending();
       if (!remote?.list) return [];
       let live: Session[];
       try {
@@ -153,7 +181,8 @@ export function layeredSessionStore(deps: {
           try {
             await pushRemote(session);
           } catch {
-            /* keep it locally and try again on the next reconcile */
+            /* keep it locally; retried on the next reconcile */
+            pending.set(sessionKey(session.origin, session.family), { op: "upsert", session });
           }
           continue;
         }

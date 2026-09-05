@@ -172,7 +172,8 @@ const sessions = layeredSessionStore({
   },
 });
 
-// On login or a push notification: drop what the backend no longer has.
+// On login or a push notification: retry the writes the backend refused, push
+// what it never received, drop what it no longer has.
 const cleared = await sessions.reconcile();
 ```
 

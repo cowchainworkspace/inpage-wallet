@@ -124,6 +124,44 @@ describe("layeredSessionStore", () => {
     expect(changes).toEqual([{ origin: A, family: "evm", session: null }]);
   });
 
+  it("retries a failed upsert on the next reconcile", async () => {
+    const local = localCache();
+    let offline = true;
+    const upsert = vi.fn(async () => {
+      if (offline) throw new Error("offline");
+      return "backend-1";
+    });
+    const store = layeredSessionStore({ local, remote: { upsert, list: async () => local.list() } });
+
+    await store.set(session(A));
+    expect(local.get(A, "evm")?.id).toBeUndefined();
+
+    offline = false;
+    await store.reconcile();
+
+    expect(upsert).toHaveBeenCalledTimes(2);
+    expect(local.get(A, "evm")).toMatchObject({ id: "backend-1" });
+  });
+
+  it("retries a failed remove on the next reconcile and then stops", async () => {
+    const local = localCache([session(A, { id: "backend-1" })]);
+    let offline = true;
+    const remove = vi.fn(async () => {
+      if (offline) throw new Error("offline");
+    });
+    const store = layeredSessionStore({ local, remote: { remove, list: async () => [] } });
+
+    await store.clear(A, "evm");
+    expect(remove).toHaveBeenCalledTimes(1);
+
+    offline = false;
+    await store.reconcile();
+    expect(remove).toHaveBeenCalledTimes(2);
+
+    await store.reconcile();
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+
   it("reconcile pushes a local session the backend never received", async () => {
     const local = localCache([session(A)]);
     const upsert = vi.fn(async () => "backend-a");
