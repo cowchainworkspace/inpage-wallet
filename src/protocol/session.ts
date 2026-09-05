@@ -11,8 +11,10 @@ export type Session = {
   walletId?: string;
   /** Backend session id once persisted remotely. */
   id?: string;
-  /** Solana public key bytes, JSON-safe. */
+  /** Account public key bytes, JSON-safe. Solana and BTC surface it to the page. */
   publicKey?: number[];
+  /** BTC address type, e.g. "p2wpkh". */
+  addressType?: string;
   createdAt: number;
   lastUsedAt: number;
 };

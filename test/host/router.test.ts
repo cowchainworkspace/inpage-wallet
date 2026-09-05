@@ -1,0 +1,556 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  createDappRouter,
+  type ConnectDecision,
+  type DappRouter,
+  type RouterDeps,
+  type SignRequest,
+} from "../../src/host/router";
+import { memorySessionStore, type SessionStore } from "../../src/host/session-store";
+import type { ProviderEvent } from "../../src/protocol/envelope";
+import type { NetworkDef } from "../../src/protocol/networks";
+import type { Session } from "../../src/protocol/session";
+
+const ORIGIN = "https://app.uniswap.org";
+const EVM_ADDRESS = "0x7a3f000000000000000000000000000000002b1c";
+const SOL_ADDRESS = "So11111111111111111111111111111111111111112";
+
+const NETWORKS: NetworkDef[] = [
+  { id: "1", family: "evm", name: "Ethereum", wire: { evmChainId: "0x1", caip2: "eip155:1" } },
+  { id: "137", family: "evm", name: "Polygon", wire: { evmChainId: "0x89" } },
+  {
+    id: "sol_mainnet",
+    family: "solana",
+    name: "Solana",
+    wire: { walletStandardChain: "solana:mainnet" },
+  },
+  { id: "ada_mainnet", family: "cardano", name: "Cardano", wire: { cardanoNetworkId: 1 } },
+];
+
+function session(over: Partial<Session> & Pick<Session, "family">): Session {
+  return {
+    origin: ORIGIN,
+    networkId: over.family === "evm" ? "1" : over.family === "solana" ? "sol_mainnet" : "ada_mainnet",
+    accounts: over.family === "solana" ? [SOL_ADDRESS] : [EVM_ADDRESS],
+    createdAt: 1,
+    lastUsedAt: 1,
+    ...over,
+  };
+}
+
+type Harness = {
+  router: DappRouter;
+  sessions: SessionStore;
+  connect: ReturnType<typeof vi.fn>;
+  sign: ReturnType<typeof vi.fn>;
+  switchChain: ReturnType<typeof vi.fn>;
+  rpc: ReturnType<typeof vi.fn>;
+  events: { origin: string; event: ProviderEvent }[];
+};
+
+function harness(
+  seed: Session[] = [],
+  overrides: Partial<RouterDeps> = {},
+): Harness {
+  const sessions = memorySessionStore(seed);
+  const connect = vi.fn(async (): Promise<ConnectDecision | null> => null);
+  const sign = vi.fn(async () => "0xsigned");
+  const switchChain = vi.fn(async () => true);
+  const rpc = vi.fn(async () => "0x2a");
+  const events: { origin: string; event: ProviderEvent }[] = [];
+
+  const router = createDappRouter({
+    networks: NETWORKS,
+    sessions,
+    ui: { connect, sign },
+    rpc,
+    emit: (origin, event) => events.push({ origin, event }),
+    ...overrides,
+  });
+
+  return { router, sessions, connect, sign, switchChain, rpc, events };
+}
+
+let h: Harness;
+beforeEach(() => {
+  h = harness();
+});
+
+describe("read-only methods answer locally and never prompt", () => {
+  it("returns the default chain id with no session", async () => {
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_chainId" });
+
+    expect(out).toEqual({ result: "0x1" });
+    expect(h.connect).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty account list rather than prompting when not connected", async () => {
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_accounts" });
+
+    expect(out).toEqual({ result: [] });
+    expect(h.connect).not.toHaveBeenCalled();
+  });
+
+  it("derives net_version from the session network", async () => {
+    h = harness([session({ family: "evm", networkId: "137" })]);
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "net_version" });
+
+    expect(out).toEqual({ result: "137" });
+  });
+
+  it("answers wallet_getPermissions from the session", async () => {
+    expect(await h.router.handle({ origin: ORIGIN, method: "wallet_getPermissions" })).toEqual({
+      result: [],
+    });
+
+    h = harness([session({ family: "evm" })]);
+    expect(await h.router.handle({ origin: ORIGIN, method: "wallet_getPermissions" })).toEqual({
+      result: [{ parentCapability: "eth_accounts" }],
+    });
+  });
+
+  it("answers CIP-30 reads from the session and the network wire", async () => {
+    h = harness([session({ family: "cardano", accounts: ["addr_hex_a", "addr_hex_b"] })]);
+
+    expect(await h.router.handle({ origin: ORIGIN, method: "cardano_isEnabled" })).toEqual({
+      result: true,
+    });
+    expect(await h.router.handle({ origin: ORIGIN, method: "cardano_getNetworkId" })).toEqual({
+      result: 1,
+    });
+    expect(await h.router.handle({ origin: ORIGIN, method: "cardano_getUsedAddresses" })).toEqual({
+      result: ["addr_hex_a", "addr_hex_b"],
+    });
+    expect(await h.router.handle({ origin: ORIGIN, method: "cardano_getChangeAddress" })).toEqual({
+      result: "addr_hex_a",
+    });
+    expect(await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" })).toEqual(
+      { result: [] },
+    );
+  });
+});
+
+describe("read RPC passthrough", () => {
+  it("proxies an allow-listed method to the node", async () => {
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_getBalance",
+      params: [EVM_ADDRESS, "latest"],
+    });
+
+    expect(h.rpc).toHaveBeenCalledWith({
+      family: "evm",
+      networkId: "1",
+      chainId: "0x1",
+      method: "eth_getBalance",
+      params: [EVM_ADDRESS, "latest"],
+    });
+    expect(out).toEqual({ result: "0x2a" });
+  });
+
+  it("refuses a method that is not on the allow-list", async () => {
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_sendRawTransaction" });
+
+    expect(out).toEqual({
+      error: { code: 4200, message: "Unsupported method: eth_sendRawTransaction" },
+    });
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it("reports a node failure as an internal error instead of throwing", async () => {
+    h.rpc.mockRejectedValue(new Error("node unreachable"));
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_call", params: [] });
+
+    expect(out).toEqual({ error: { code: -32603, message: "node unreachable" } });
+  });
+
+  it("refuses every read when the policy is none", async () => {
+    h = harness([], { policy: { readRpc: "none" } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_call", params: [] });
+
+    expect(out).toEqual({ error: { code: 4200, message: "Unsupported method: eth_call" } });
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it("honours a custom allow-list", async () => {
+    h = harness([], { policy: { readRpc: new Set(["eth_blockNumber"]) } });
+
+    expect(await h.router.handle({ origin: ORIGIN, method: "eth_blockNumber" })).toEqual({
+      result: "0x2a",
+    });
+    expect(await h.router.handle({ origin: ORIGIN, method: "eth_call" })).toEqual({
+      error: { code: 4200, message: "Unsupported method: eth_call" },
+    });
+  });
+
+  it("is unsupported when the host wired no rpc client", async () => {
+    const router = createDappRouter({
+      networks: NETWORKS,
+      sessions: memorySessionStore(),
+      ui: { connect: vi.fn(async () => null), sign: vi.fn(async () => "0x") },
+      emit: () => {},
+    });
+
+    expect(await router.handle({ origin: ORIGIN, method: "eth_call" })).toEqual({
+      error: { code: 4200, message: "Unsupported method: eth_call" },
+    });
+  });
+});
+
+describe("connect", () => {
+  it("returns existing accounts without prompting again", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(out).toEqual({ result: [EVM_ADDRESS] });
+    expect(h.connect).not.toHaveBeenCalled();
+  });
+
+  it("prompts when there is no session and returns the granted accounts", async () => {
+    h.connect.mockResolvedValue({ accounts: [EVM_ADDRESS] });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(h.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ origin: ORIGIN, family: "evm", method: "eth_requestAccounts" }),
+    );
+    expect(out).toEqual({ result: [EVM_ADDRESS] });
+    expect(await h.sessions.get(ORIGIN, "evm")).toMatchObject({
+      accounts: [EVM_ADDRESS],
+      networkId: "1",
+    });
+    expect(h.events).toContainEqual({
+      origin: ORIGIN,
+      event: { family: "evm", event: "accountsChanged", data: [EVM_ADDRESS] },
+    });
+  });
+
+  it("stores the network the decision named", async () => {
+    h.connect.mockResolvedValue({ accounts: [EVM_ADDRESS], networkId: "137", walletId: "vault-7" });
+
+    await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(await h.sessions.get(ORIGIN, "evm")).toMatchObject({
+      networkId: "137",
+      walletId: "vault-7",
+    });
+  });
+
+  it("answers 4001 when the user rejects", async () => {
+    h.connect.mockResolvedValue(null);
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(out).toEqual({ error: { code: 4001, message: "User rejected the request" } });
+  });
+
+  it("coalesces concurrent connects for the same origin and family", async () => {
+    let release!: (d: ConnectDecision) => void;
+    const gate = new Promise<ConnectDecision>((resolve) => {
+      release = resolve;
+    });
+    h.connect.mockImplementation(() => gate);
+
+    const a = h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+    const b = h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+    release({ accounts: [EVM_ADDRESS] });
+
+    expect(await a).toEqual({ result: [EVM_ADDRESS] });
+    expect(await b).toEqual({ result: [EVM_ADDRESS] });
+    expect(h.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("prompts again when silentReconnect is off", async () => {
+    h = harness([session({ family: "evm" })], { policy: { silentReconnect: false } });
+    h.connect.mockResolvedValue({ accounts: [EVM_ADDRESS] });
+
+    await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(h.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it("times out an unanswered prompt as 4001", async () => {
+    vi.useFakeTimers();
+    try {
+      h = harness([], { policy: { requestTimeoutMs: 1000 } });
+      h.connect.mockImplementation(() => new Promise<ConnectDecision>(() => {}));
+
+      const pending = h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(await pending).toEqual({
+        error: { code: 4001, message: "Request timed out without an answer" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("wallet_switchEthereumChain", () => {
+  it("answers 4902 for a chain that is not registered", async () => {
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0xdead" }],
+    });
+
+    expect(out).toEqual({ error: { code: 4902, message: "Unrecognized chain ID" } });
+  });
+
+  it("switches a registered chain and emits chainChanged", async () => {
+    h = harness([session({ family: "evm", networkId: "1" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0x89" }],
+    });
+
+    expect(out).toEqual({ result: null });
+    expect(await h.sessions.get(ORIGIN, "evm")).toMatchObject({ networkId: "137" });
+    expect(h.events).toContainEqual({
+      origin: ORIGIN,
+      event: { family: "evm", event: "chainChanged", data: "0x89" },
+    });
+  });
+
+  it("does not emit when the session is already on that chain", async () => {
+    h = harness([session({ family: "evm", networkId: "137" })]);
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0x89" }],
+    });
+
+    expect(h.events).toHaveLength(0);
+  });
+
+  it("refuses a chain outside supportedEvmChainIds even when registered", async () => {
+    h = harness([], { policy: { supportedEvmChainIds: new Set(["0x1"]) } });
+
+    expect(
+      await h.router.handle({
+        origin: ORIGIN,
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: "0x89" }],
+      }),
+    ).toEqual({ error: { code: 4902, message: "Unrecognized chain ID" } });
+  });
+
+  it("asks switchChain when the host supplies it and maps a refusal to 4001", async () => {
+    const switchChain = vi.fn(async () => false);
+    h = harness([session({ family: "evm" })], {
+      ui: { connect: vi.fn(async () => null), sign: vi.fn(async () => "0x"), switchChain },
+    });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0x89" }],
+    });
+
+    expect(switchChain).toHaveBeenCalled();
+    expect(out).toEqual({ error: { code: 4001, message: "User rejected the request" } });
+  });
+
+  it("registers a network returned by addChain and completes the switch", async () => {
+    const added: NetworkDef = { id: "8453", family: "evm", name: "Base", wire: { evmChainId: "0x2105" } };
+    h = harness([session({ family: "evm" })], {
+      ui: {
+        connect: vi.fn(async () => null),
+        sign: vi.fn(async () => "0x"),
+        addChain: vi.fn(async () => added),
+      },
+    });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_addEthereumChain",
+      params: [{ chainId: "0x2105" }],
+    });
+
+    expect(out).toEqual({ result: null });
+    expect(await h.sessions.get(ORIGIN, "evm")).toMatchObject({ networkId: "8453" });
+  });
+});
+
+describe("signing", () => {
+  it("refuses to sign for an origin that never connected", async () => {
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "personal_sign",
+      params: ["0xdeadbeef", EVM_ADDRESS],
+    });
+
+    expect(out).toEqual({
+      error: { code: 4100, message: "Unauthorized — connect the wallet first" },
+    });
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+
+  it("raises a prompt for a connected origin and returns the signature", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_sendTransaction",
+      params: [{ to: EVM_ADDRESS, value: "0x1", data: "0xabcdef" }],
+    });
+
+    const req = h.sign.mock.calls[0]?.[0] as SignRequest & { family: "evm" };
+    expect(req.origin).toBe(ORIGIN);
+    expect(req.method).toBe("eth_sendTransaction");
+    expect("tx" in req && req.tx).toMatchObject({
+      to: EVM_ADDRESS,
+      value: "0x1",
+      dataLength: 3,
+      chainId: "0x1",
+    });
+    expect(out).toEqual({ result: "0xsigned" });
+  });
+
+  it("hands the modal a parsed EIP-712 tree", async () => {
+    h = harness([session({ family: "evm" })]);
+    const typed = JSON.stringify({
+      primaryType: "Permit",
+      domain: { name: "USDC", chainId: 1 },
+      message: { owner: EVM_ADDRESS, value: "1000" },
+    });
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_signTypedData_v4",
+      params: [EVM_ADDRESS, typed],
+    });
+
+    const req = h.sign.mock.calls[0]?.[0] as SignRequest & { family: "evm" };
+    expect("typedData" in req && req.typedData).toMatchObject({
+      primaryType: "Permit",
+      truncated: false,
+    });
+  });
+
+  it("maps a rejection thrown by the prompt back to its RPC code", async () => {
+    h = harness([session({ family: "evm" })]);
+    h.sign.mockRejectedValue({ code: 4001, message: "User rejected the request" });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
+
+    expect(out).toEqual({ error: { code: 4001, message: "User rejected the request" } });
+  });
+
+  it("parses Solana transaction bytes for the modal", async () => {
+    h = harness([session({ family: "solana" })]);
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "solana_signTransaction",
+      params: [{ tx: [1, 2, 3], account: SOL_ADDRESS }],
+    });
+
+    const req = h.sign.mock.calls[0]?.[0] as SignRequest & { family: "solana" };
+    expect("txBytes" in req && req.txBytes).toEqual([1, 2, 3]);
+    expect(req.account).toBe(SOL_ADDRESS);
+  });
+});
+
+describe("solana", () => {
+  it("never opens UI for a silent connect with no session", async () => {
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "solana_connect",
+      params: [{ silent: true }],
+    });
+
+    expect(out).toEqual({ result: null });
+    expect(h.connect).not.toHaveBeenCalled();
+  });
+
+  it("prompts for an explicit connect and returns address plus public key", async () => {
+    h.connect.mockResolvedValue({ accounts: [SOL_ADDRESS], publicKey: [1, 2, 3] });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "solana_connect",
+      params: [{ silent: false }],
+    });
+
+    expect(out).toEqual({ result: { address: SOL_ADDRESS, publicKey: [1, 2, 3] } });
+  });
+
+  it("clears the session and emits an empty account list on disconnect", async () => {
+    h = harness([session({ family: "solana" })]);
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "solana_disconnect" });
+
+    expect(out).toEqual({ result: null });
+    expect(await h.sessions.get(ORIGIN, "solana")).toBeNull();
+    expect(h.events).toEqual([
+      { origin: ORIGIN, event: { family: "solana", event: "accountsChanged", data: [] } },
+    ]);
+  });
+});
+
+describe("unknown and unregistered", () => {
+  it("answers EIP-1193 4200 for a method it does not know", async () => {
+    expect(await h.router.handle({ origin: ORIGIN, method: "eth_nonsense" })).toEqual({
+      error: { code: 4200, message: "Unsupported method: eth_nonsense" },
+    });
+  });
+
+  it("answers 4200 for a family the host did not register", async () => {
+    expect(await h.router.handle({ origin: ORIGIN, method: "btc_accounts" })).toEqual({
+      error: { code: 4200, message: "Unsupported method: btc_accounts" },
+    });
+  });
+});
+
+describe("disconnect and tab close", () => {
+  it("clears, emits and rejects everything in flight", async () => {
+    h = harness([session({ family: "evm" })]);
+    h.sign.mockImplementation(() => new Promise(() => {}));
+
+    const pending = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
+    await h.router.disconnect(ORIGIN, "evm");
+
+    expect(await pending).toEqual({ error: { code: 4001, message: "User rejected the request" } });
+    expect(await h.sessions.get(ORIGIN, "evm")).toBeNull();
+    expect(h.events).toEqual([
+      { origin: ORIGIN, event: { family: "evm", event: "accountsChanged", data: [] } },
+      { origin: ORIGIN, event: { family: "evm", event: "disconnect", data: null } },
+    ]);
+  });
+
+  it("rejectAll answers waiting requests and reports how many", async () => {
+    h = harness([session({ family: "evm" })]);
+    h.sign.mockImplementation(() => new Promise(() => {}));
+
+    const a = h.router.handle({ origin: ORIGIN, method: "personal_sign", params: [] });
+    const b = h.router.handle({ origin: ORIGIN, method: "eth_sign", params: [] });
+
+    expect(h.router.rejectAll(ORIGIN)).toBe(2);
+    expect(await a).toMatchObject({ error: { code: 4001 } });
+    expect(await b).toMatchObject({ error: { code: 4001 } });
+    expect(h.router.rejectAll(ORIGIN)).toBe(0);
+  });
+
+  it("emits disconnect when the store reports a session that ended elsewhere", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    await h.sessions.clear(ORIGIN, "evm");
+
+    expect(h.events).toEqual([
+      { origin: ORIGIN, event: { family: "evm", event: "accountsChanged", data: [] } },
+      { origin: ORIGIN, event: { family: "evm", event: "disconnect", data: null } },
+    ]);
+    h.router.dispose();
+  });
+});
