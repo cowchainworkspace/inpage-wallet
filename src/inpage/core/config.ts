@@ -24,6 +24,8 @@ export type InjectedConfig = {
     /** Use the full TronWeb SDK entry instead of the thin tronLink bridge. */
     tronWeb?: boolean;
   };
+  /** window.cardano key dApps enumerate. Defaults to a slug of identity.name. */
+  cardanoWalletKey?: string;
   channel?: string;
 };
 
