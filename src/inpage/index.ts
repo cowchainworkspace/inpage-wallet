@@ -6,6 +6,8 @@ import { installCardano } from "./chains/cardano";
 import { installEvm } from "./chains/evm";
 import { installSolana } from "./chains/solana";
 import { installTron } from "./chains/tron";
+import { installXrp } from "./chains/xrp";
+import { installXrpStandard } from "./chains/xrp-standard";
 
 export { createBridge, newRequestId, rpcException, type Bridge } from "./core/bridge";
 export { FALLBACK_ICON, initialIcon, type InjectedConfig, type WalletIdentity } from "./core/config";
@@ -44,6 +46,10 @@ export function createInjectedWallet(transport: PageTransport, config: InjectedC
         break;
       case "tron":
         installTron(bridge, config);
+        break;
+      case "xrp":
+        installXrp(bridge, config);
+        installXrpStandard(bridge, config);
         break;
       default:
         break;
