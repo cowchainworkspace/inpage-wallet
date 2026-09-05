@@ -3,6 +3,7 @@ import { createBridge, type Bridge } from "./core/bridge";
 import { initialIcon, type InjectedConfig } from "./core/config";
 import type { PageTransport } from "./core/transport";
 import { installEvm } from "./chains/evm";
+import { installSolana } from "./chains/solana";
 
 export { createBridge, newRequestId, rpcException, type Bridge } from "./core/bridge";
 export { FALLBACK_ICON, initialIcon, type InjectedConfig, type WalletIdentity } from "./core/config";
@@ -32,6 +33,9 @@ export function createInjectedWallet(transport: PageTransport, config: InjectedC
     switch (family) {
       case "evm":
         installEvm(bridge, config);
+        break;
+      case "solana":
+        installSolana(bridge, config);
         break;
       default:
         break;
