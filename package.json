@@ -1,0 +1,120 @@
+{
+  "name": "inpage-wallet",
+  "version": "0.0.1",
+  "private": false,
+  "description": "Headless, brand-neutral wallet injection and request routing for dApp pages. EIP-6963, Wallet Standard, CIP-30, TronLink, XRPL and BTC providers over a pluggable transport.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "wallet",
+    "eip-1193",
+    "eip-6963",
+    "wallet-standard",
+    "cip-30",
+    "dapp",
+    "web3",
+    "browser-extension",
+    "webview"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol/index.d.ts",
+      "import": "./dist/protocol/index.js"
+    },
+    "./host": {
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist/host/index.js"
+    },
+    "./inpage": {
+      "types": "./dist/inpage/index.d.ts",
+      "import": "./dist/inpage/index.js"
+    },
+    "./inpage/*": {
+      "types": "./dist/inpage/chains/*.d.ts",
+      "import": "./dist/inpage/chains/*.js"
+    },
+    "./transports/*": {
+      "types": "./dist/transports/*.d.ts",
+      "import": "./dist/transports/*.js"
+    },
+    "./script": {
+      "types": "./dist/script/index.d.ts",
+      "import": "./dist/script/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsup",
+    "size": "pnpm run build && size-limit",
+    "prepare": "pnpm run build"
+  },
+  "peerDependencies": {
+    "tronweb": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "tronweb": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.2",
+    "@size-limit/preset-small-lib": "^13.0.3",
+    "@types/node": "^24.10.1",
+    "jsdom": "^30.0.1",
+    "size-limit": "^13.0.3",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.4",
+    "vitest": "^3.2.7"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=20"
+  },
+  "size-limit": [
+    {
+      "name": "core + evm",
+      "path": "dist/inpage/evm.iife.js",
+      "limit": "5 kB"
+    },
+    {
+      "name": "solana",
+      "path": "dist/inpage/solana.iife.js",
+      "limit": "4 kB"
+    },
+    {
+      "name": "cardano",
+      "path": "dist/inpage/cardano.iife.js",
+      "limit": "4 kB"
+    },
+    {
+      "name": "xrp",
+      "path": "dist/inpage/xrp.iife.js",
+      "limit": "4 kB"
+    },
+    {
+      "name": "btc",
+      "path": "dist/inpage/btc.iife.js",
+      "limit": "4 kB"
+    },
+    {
+      "name": "tron",
+      "path": "dist/inpage/tron.iife.js",
+      "limit": "3 kB"
+    }
+  ]
+}

@@ -1,0 +1,920 @@
+<title>Inpage Wallet</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #f5f7fa;
+    --surface: #ffffff;
+    --surface-2: #eef1f6;
+    --ink: #18253e;
+    --ink-2: #4b5670;
+    --muted: #7b859c;
+    --line: #d8deea;
+    --line-2: #bcc5d6;
+    --accent: #1a9d56;
+    --accent-ink: #0f6b3a;
+    --accent-soft: #e2f5ea;
+    --shared: #dcefe4;
+    --code-bg: #1b2740;
+    --code-ink: #dfe6f3;
+    --code-key: #9ad8b6;
+    --code-str: #ffd59b;
+    --code-cm: #8b98b6;
+    --warn: #b5651d;
+    --warn-soft: #fbeedd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0e1523;
+      --surface: #151f33;
+      --surface-2: #1c283f;
+      --ink: #e6ebf4;
+      --ink-2: #b4bdd0;
+      --muted: #7f8ba3;
+      --line: #263452;
+      --line-2: #344568;
+      --accent: #22f178;
+      --accent-ink: #7ff0ae;
+      --accent-soft: #163b2a;
+      --shared: #163526;
+      --code-bg: #0a101c;
+      --code-ink: #dfe6f3;
+      --code-key: #9ad8b6;
+      --code-str: #ffd59b;
+      --code-cm: #7d8aa8;
+      --warn: #f0a35a;
+      --warn-soft: #3a2a17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0e1523;
+    --surface: #151f33;
+    --surface-2: #1c283f;
+    --ink: #e6ebf4;
+    --ink-2: #b4bdd0;
+    --muted: #7f8ba3;
+    --line: #263452;
+    --line-2: #344568;
+    --accent: #22f178;
+    --accent-ink: #7ff0ae;
+    --accent-soft: #163b2a;
+    --shared: #163526;
+    --code-bg: #0a101c;
+    --code-ink: #dfe6f3;
+    --code-key: #9ad8b6;
+    --code-str: #ffd59b;
+    --code-cm: #7d8aa8;
+    --warn: #f0a35a;
+    --warn-soft: #3a2a17;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent-ink); }
+  code, pre, .mono {
+    font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  code {
+    font-size: 0.88em;
+    background: var(--surface-2);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  pre {
+    margin: 0;
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 18px 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+  pre .k { color: var(--code-key); }
+  pre .s { color: var(--code-str); }
+  pre .c { color: var(--code-cm); font-style: italic; }
+
+  .page {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 48px;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+  }
+  @media (max-width: 860px) {
+    .page { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 28px 18px 64px; }
+    .rail { position: static; }
+  }
+
+  .rail {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    font-size: 13px;
+  }
+  .rail .eyebrow { margin-bottom: 14px; }
+  .rail ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-left: 1px solid var(--line);
+  }
+  .rail li a {
+    display: block;
+    padding: 5px 0 5px 14px;
+    color: var(--ink-2);
+    text-decoration: none;
+    margin-left: -1px;
+    border-left: 2px solid transparent;
+  }
+  .rail li a:hover, .rail li a:focus-visible {
+    color: var(--ink);
+    border-left-color: var(--accent);
+    outline: none;
+  }
+
+  main { max-width: 760px; min-width: 0; }
+
+  .eyebrow {
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  header h1 {
+    font-family: "Bricolage Grotesque", "IBM Plex Sans", sans-serif;
+    font-weight: 600;
+    font-size: 40px;
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin: 6px 0 14px;
+    text-wrap: balance;
+  }
+  header .lede {
+    font-size: 17px;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 22px;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    font-size: 13px;
+    color: var(--muted);
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .meta b { color: var(--ink-2); font-weight: 500; }
+
+  section { margin-top: 56px; }
+  h2 {
+    font-family: "Bricolage Grotesque", "IBM Plex Sans", sans-serif;
+    font-weight: 600;
+    font-size: 26px;
+    line-height: 1.15;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 28px 0 8px;
+  }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  ul, ol { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 6px; }
+  li::marker { color: var(--muted); }
+
+  figure { margin: 22px 0; }
+  figure svg { display: block; width: 100%; height: auto; color: var(--ink); }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 68ch; }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    margin: 18px 0;
+  }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout p:last-child { margin-bottom: 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+    margin: 14px 0 18px;
+  }
+  .tablewrap { overflow-x: auto; }
+  th, td {
+    text-align: left;
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th {
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  td.mono { font-size: 13px; white-space: nowrap; }
+
+  .tree {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-size: 13px;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+  .tree .d { color: var(--ink); font-weight: 500; }
+  .tree .n { color: var(--muted); }
+  .tree .shared { background: var(--shared); border-radius: 3px; padding: 0 4px; }
+
+  .two {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .two h3 { margin-top: 0; }
+
+  .steps { counter-reset: step; list-style: none; padding: 0; }
+  .steps li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+  }
+  .steps li:last-child { border-bottom: 1px solid var(--line); }
+  .steps li::before {
+    content: counter(step);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    color: var(--accent-ink);
+    padding-top: 2px;
+  }
+  .steps li > div { min-width: 0; }
+  .steps b { display: block; font-weight: 600; margin-bottom: 2px; }
+  .steps p { margin: 0; font-size: 14px; color: var(--ink-2); }
+
+  .pill {
+    display: inline-block;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+    color: var(--ink-2);
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+  .pill.shared { background: var(--shared); border-color: transparent; color: var(--accent-ink); }
+</style>
+
+<div class="page">
+  <nav class="rail" aria-label="Contents">
+    <div class="eyebrow">Contents</div>
+    <ol>
+      <li><a href="#scope">Scope</a></li>
+      <li><a href="#layers">Layers</a></li>
+      <li><a href="#layout">Package layout</a></li>
+      <li><a href="#injected">Injected side</a></li>
+      <li><a href="#transport">Transport</a></li>
+      <li><a href="#host">Host side and your modal</a></li>
+      <li><a href="#lifecycle">Request lifecycle</a></li>
+      <li><a href="#protocol">Protocol contract</a></li>
+      <li><a href="#build">Build outputs</a></li>
+      <li><a href="#usage">Usage in both apps</a></li>
+      <li><a href="#public">Public repository</a></li>
+      <li><a href="#migration">Migration</a></li>
+      <li><a href="#decisions">Open decisions</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header>
+      <div class="eyebrow">Design · inpage-wallet</div>
+      <h1>Inpage Wallet</h1>
+      <p class="lede">One open-source, headless package that injects wallet providers into any web page, carries their requests to a host, and routes them. Any wallet app or browser extension consumes it with its own brand, its own networks, its own UI, its own storage, and its own signers. Trustodian extension and afridax mobile are the first two.</p>
+      <div class="meta">
+        <span><b>Package</b> inpage-wallet, unscoped, name free on npm</span>
+        <span><b>Repo</b> separate git repo, local first, npm later, MIT</span>
+        <span><b>Name</b> the ecosystem term for the injected script, no brand, no chain</span>
+        <span><b>Sources</b> Trustodian-Extension src/provider, afridax-mobile AFX-1119</span>
+        <span><b>Status</b> proposal</span>
+      </div>
+    </header>
+
+    <section id="scope">
+      <h2>Scope</h2>
+      <p>Today the extension has seven typed injectors bundled by Vite, and the mobile branch has two hand-written ES5 string templates plus a pure, tested router. Both hard-code the same wallet identity, the same channel, and the same method names, and they are already drifting in direction names, timeouts, and the <code>window.ethereum</code> policy.</p>
+      <p>The package takes over everything that is the same in both places and nothing that is different:</p>
+      <div class="two">
+        <div>
+          <h3>In the package <span class="pill shared">shared</span></h3>
+          <ul>
+            <li>Protocol: channel, envelope, error codes, typed method map</li>
+            <li>Injected providers for EVM, Solana, Cardano, Tron, XRP, BTC</li>
+            <li>Transport shims for the extension content script and the React Native WebView</li>
+            <li>Router core: method classification and dispatch, with every decision behind a callback</li>
+            <li>Origin helper and request-id correlation</li>
+            <li>Parsed request models for rendering, such as EIP-712 fields</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Stays in each app <span class="pill">host</span></h3>
+          <ul>
+            <li>Connect, sign, and chain-switch UI</li>
+            <li>Session storage: local cache plus your backend</li>
+            <li>Network definitions and their ids</li>
+            <li>Signers and key material</li>
+            <li>RPC clients and node URLs</li>
+            <li>Tab management, WalletConnect, approval windows</li>
+            <li>Brand identity values, passed in as config</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">
+        <p><b>Requirements.</b> Zero runtime dependencies in the injected core. Per-chain entry points so a host importing EVM never bundles Tron. Runtime config for network and identity, never build-time env. No React, no React Native, no component library inside the package. Nothing Trustodian-specific in the source: no brand name, no uuid, no RPC hosts, no keys. Everything a wallet is comes in through config.</p>
+        <p><b>Independence.</b> No dependency on WalletConnect, Reown, wagmi, viem, web3.js, or any chain SDK. The package defines its own <code>ChainType</code>, <code>Session</code>, and error types rather than importing either app's. A host that also speaks WalletConnect may route both into the same modal, but the package never knows.</p>
+      </div>
+    </section>
+
+    <section id="layers">
+      <h2>Layers</h2>
+      <p>Four layers sit between a dApp and the user's approval. The two outer ones belong to the platform; the two inner ones are the package. Only the transport differs between the extension and mobile, and it is about fifty lines each.</p>
+      <figure>
+        <svg viewBox="0 0 760 400" role="img" aria-label="Five horizontal layers from dApp page down to host app. The injected providers and router core are shared; the transport has two platform variants; the dApp page and host app are outside the package.">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <!-- column headers -->
+          <text x="250" y="18" font-size="11.5" text-anchor="middle" fill="currentColor" opacity="0.6" letter-spacing="1">EXTENSION</text>
+          <text x="590" y="18" font-size="11.5" text-anchor="middle" fill="currentColor" opacity="0.6" letter-spacing="1">AFRIDAX MOBILE</text>
+
+          <!-- shared band -->
+          <rect x="120" y="94" width="620" height="140" rx="8" fill="var(--shared)" stroke="none"/>
+          <text x="128" y="112" font-size="11" fill="var(--accent-ink)" letter-spacing="1">INPAGE-WALLET</text>
+
+          <!-- row labels -->
+          <text x="10" y="64" font-size="12" fill="currentColor" opacity="0.7">dApp page</text>
+          <text x="10" y="150" font-size="12" fill="currentColor" opacity="0.7">injected</text>
+          <text x="10" y="210" font-size="12" fill="currentColor" opacity="0.7">router core</text>
+          <text x="10" y="280" font-size="12" fill="currentColor" opacity="0.7">transport</text>
+          <text x="10" y="352" font-size="12" fill="currentColor" opacity="0.7">host app</text>
+
+          <!-- dApp page row -->
+          <rect x="120" y="42" width="260" height="34" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="250" y="64" font-size="12.5" text-anchor="middle" fill="currentColor">Uniswap, Jupiter, any dApp</text>
+          <rect x="460" y="42" width="260" height="34" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="590" y="64" font-size="12.5" text-anchor="middle" fill="currentColor">same dApp inside WKWebView / Android WebView</text>
+
+          <!-- injected row: one wide box -->
+          <rect x="120" y="126" width="600" height="36" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="420" y="149" font-size="12.5" text-anchor="middle" fill="currentColor">EIP-6963 · Wallet Standard · CIP-30 · TronLink · XRPL · BTC providers</text>
+
+          <!-- router row: one wide box -->
+          <rect x="120" y="188" width="600" height="36" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="420" y="211" font-size="12.5" text-anchor="middle" fill="currentColor">classify → read-only / rpc allow-list / connect / switch / sign → ui callbacks</text>
+
+          <!-- transport row: two boxes -->
+          <rect x="120" y="258" width="260" height="36" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="250" y="274" font-size="12" text-anchor="middle" fill="currentColor">postMessage ⇄ content script</text>
+          <text x="250" y="288" font-size="10.5" text-anchor="middle" fill="currentColor" opacity="0.65">⇄ chrome.runtime ⇄ service worker</text>
+          <rect x="460" y="258" width="260" height="36" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="590" y="274" font-size="12" text-anchor="middle" fill="currentColor">ReactNativeWebView.postMessage</text>
+          <text x="590" y="288" font-size="10.5" text-anchor="middle" fill="currentColor" opacity="0.65">⇄ webView.injectJavaScript</text>
+
+          <!-- host row -->
+          <rect x="120" y="330" width="260" height="36" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="250" y="346" font-size="12" text-anchor="middle" fill="currentColor">confirmation.html · chrome.storage</text>
+          <text x="250" y="360" font-size="10.5" text-anchor="middle" fill="currentColor" opacity="0.65">vault iframe signer</text>
+          <rect x="460" y="330" width="260" height="36" rx="5" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="590" y="346" font-size="12" text-anchor="middle" fill="currentColor">bottom sheets · MMKV · WalletConnect responder</text>
+          <text x="590" y="360" font-size="10.5" text-anchor="middle" fill="currentColor" opacity="0.65">on-device signers</text>
+
+          <!-- vertical arrows, extension column -->
+          <line x1="250" y1="76" x2="250" y2="124" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+          <line x1="250" y1="162" x2="250" y2="186" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+          <line x1="250" y1="224" x2="250" y2="256" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+          <line x1="250" y1="294" x2="250" y2="328" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+          <!-- mobile column -->
+          <line x1="590" y1="76" x2="590" y2="124" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+          <line x1="590" y1="162" x2="590" y2="186" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+          <line x1="590" y1="224" x2="590" y2="256" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+          <line x1="590" y1="294" x2="590" y2="328" stroke="currentColor" stroke-width="1" marker-end="url(#arr)"/>
+
+          <!-- arrow labels -->
+          <text x="258" y="104" font-size="10.5" fill="currentColor" opacity="0.7">provider.request()</text>
+          <text x="598" y="104" font-size="10.5" fill="currentColor" opacity="0.7">provider.request()</text>
+          <text x="258" y="244" font-size="10.5" fill="currentColor" opacity="0.7">envelope</text>
+          <text x="598" y="244" font-size="10.5" fill="currentColor" opacity="0.7">envelope (JSON string)</text>
+          <text x="258" y="314" font-size="10.5" fill="currentColor" opacity="0.7">ui.sign(request)</text>
+          <text x="598" y="314" font-size="10.5" fill="currentColor" opacity="0.7">ui.sign(request)</text>
+        </svg>
+        <figcaption>The green band is the package. The router core is drawn below the transport in the extension because it runs in the service worker, but in the WebView it runs in the app process next to the transport. Where it runs is a host choice; what it does is not.</figcaption>
+      </figure>
+      <p>Note the router runs on the host side of the transport, never in the page. The page only ever holds a thin provider that forwards calls. This is what keeps key material and session state out of reach of dApp scripts on both platforms.</p>
+    </section>
+
+    <section id="layout">
+      <h2>Package layout</h2>
+      <p>Its own repository, published to npm. Subpath exports keep every chain and every transport separately importable, with <code>sideEffects: false</code> so tree shaking works. Examples live beside the source so a new consumer can copy a working integration instead of reading the two production apps.</p>
+      <div class="tree mono">
+<span class="d">inpage-wallet/</span>
+├── <span class="d">.github/workflows/</span>  <span class="n">ci.yml (typecheck, test, size), release.yml (changesets → npm with provenance)</span>
+├── <span class="d">.changeset/</span>
+├── LICENSE               <span class="n">MIT</span>
+├── README.md             <span class="n">quickstart for extension and WebView, identity rules, supported chains</span>
+├── <span class="d">examples/</span>
+│   ├── <span class="d">extension-minimal/</span> <span class="n">MV3 popup + content script wiring, no UI framework</span>
+│   └── <span class="d">rn-webview/</span>       <span class="n">Expo screen with a WebView and a plain Alert as the "modal"</span>
+├── <span class="d">src/</span>
+│   ├── <span class="d">protocol/</span>         <span class="n">channel, envelope, error codes, typed method map</span>
+│   ├── <span class="d">injected/</span>
+│   │   ├── <span class="d">core/</span>         <span class="n">bridge, pending map, listeners, id generation</span>
+│   │   ├── <span class="d">chains/</span>       <span class="n">evm  solana  cardano  tron  tron-full  xrp  btc</span>
+│   │   ├── <span class="d">transports/</span>   <span class="n">post-message (extension)  rn-webview (mobile)</span>
+│   │   └── index.ts      <span class="n">createInjectedWallet(config)</span>
+│   ├── <span class="d">host/</span>
+│   │   ├── router.ts     <span class="n">createDappRouter(deps)  — lifted from mobile bridge-router</span>
+│   │   ├── classify.ts   <span class="n">read-only / rpc allow-list / connect / switch / sign</span>
+│   │   ├── origin.ts     <span class="n">originOf, nextCommittedOrigin — lifted from mobile</span>
+│   │   ├── models/       <span class="n">parsed requests for UI: eip712, evm tx, solana tx, cardano tx</span>
+│   │   └── types.ts      <span class="n">SessionStore, UiHandlers, RpcClient, Policy</span>
+│   └── <span class="d">script/</span>
+│       └── build.ts      <span class="n">buildInjectedScript(config) → string, for WebView</span>
+├── <span class="d">scripts/</span>
+│   └── bundle.mjs        <span class="n">emits dist/injected/*.iife.js per chain + combined</span>
+├── <span class="d">test/</span>
+│   ├── router.test.ts    <span class="n">lifted from mobile with the deps mocked</span>
+│   └── announce.test.ts  <span class="n">loads each IIFE into jsdom, asserts EIP-6963 / register-wallet / window.cardano</span>
+└── package.json          <span class="n">exports: ".", "./protocol", "./injected/*", "./transports/*", "./script"; publishConfig.access: public</span>
+      </div>
+    </section>
+
+    <section id="injected">
+      <h2>Injected side</h2>
+      <p>Each chain is a factory that takes a bridge and a config and registers itself on the page. Source is TypeScript. The build turns it into an IIFE, and that IIFE is what both the Firefox content-script registration and the React Native WebView receive. Mobile stops hand-writing ES5 strings.</p>
+<pre><code><span class="c">// injected/index.ts</span>
+<span class="k">export type</span> WalletIdentity = {
+  name: string;         <span class="c">// "Trustodian Wallet"</span>
+  rdns: string;         <span class="c">// "com.trustodian.wallet" — permanent, dApps key saved connections on it</span>
+  uuid: string;         <span class="c">// EIP-6963 uuid — permanent</span>
+  icon?: string;        <span class="c">// data URI; a spec-valid fallback is used until the host sends one</span>
+};
+
+<span class="k">export type</span> InjectedConfig = {
+  identity: WalletIdentity;
+  networks: NetworkDef[];                <span class="c">// your ids, your names; families decide which provider is injected</span>
+  defaultNetwork?: Record&lt;ChainFamily, string&gt;;   <span class="c">// which network answers eth_chainId before a session exists</span>
+  legacyGlobals?: {                      <span class="c">// off by default: EIP-6963 / Wallet Standard only</span>
+    ethereum?: boolean;                  <span class="c">// define window.ethereum if absent</span>
+    tronWeb?: boolean;                   <span class="c">// full TronWeb SDK instead of thin tronLink bridge</span>
+  };
+  channel?: string;                      <span class="c">// defaults to "inpage-wallet-v1"</span>
+};
+
+<span class="k">export function</span> createInjectedWallet(transport: PageTransport, config: InjectedConfig): void;</code></pre>
+      <h3>Networks are yours to name</h3>
+      <p>The package knows six <em>families</em>, one per provider standard it can speak. It does not know any network. You register networks with your own ids, the same ids your backend uses, and the package maps them to what each standard expects on the wire.</p>
+<pre><code><span class="k">export type</span> ChainFamily = <span class="s">"evm"</span> | <span class="s">"solana"</span> | <span class="s">"cardano"</span> | <span class="s">"tron"</span> | <span class="s">"xrp"</span> | <span class="s">"btc"</span>;
+
+<span class="k">export type</span> NetworkDef = {
+  id: string;                    <span class="c">// your id: "1", "11155111", "sol_mainnet", "tron_shasta", "afridax_mainnet"</span>
+  family: ChainFamily;
+  name: string;                  <span class="c">// shown in your UI only</span>
+  wire: {                        <span class="c">// what the dApp-facing standard needs</span>
+    evmChainId?: string;         <span class="c">// hex, for eth_chainId / EIP-3326</span>
+    walletStandardChain?: string;<span class="c">// "solana:mainnet" for Wallet Standard</span>
+    cardanoNetworkId?: 0 | 1;
+    caip2?: string;              <span class="c">// "eip155:1", used in parsed models and events</span>
+  };
+};
+
+<span class="c">// afridax mobile registers what its backend already calls things</span>
+<span class="k">const</span> networks: NetworkDef[] = [
+  { id: <span class="s">"1"</span>,            family: <span class="s">"evm"</span>,    name: <span class="s">"Ethereum"</span>,      wire: { evmChainId: <span class="s">"0x1"</span>, caip2: <span class="s">"eip155:1"</span> } },
+  { id: <span class="s">"11155111"</span>,     family: <span class="s">"evm"</span>,    name: <span class="s">"Sepolia"</span>,       wire: { evmChainId: <span class="s">"0xaa36a7"</span> } },
+  { id: <span class="s">"sol_mainnet"</span>,  family: <span class="s">"solana"</span>, name: <span class="s">"Solana"</span>,        wire: { walletStandardChain: <span class="s">"solana:mainnet"</span> } },
+  { id: <span class="s">"tron_shasta"</span>,  family: <span class="s">"tron"</span>,   name: <span class="s">"Tron Shasta"</span>,   wire: {} },
+];</code></pre>
+      <p>A dApp's <code>wallet_switchEthereumChain</code> arrives as a hex chain id; the router looks it up in this registry and stores your id in the session. An own EVM network, an L2 you operate, or a partner chain is one more entry. A dApp asking for a chain you have not registered gets 4902, or reaches <code>ui.addChain</code> if you provide it.</p>
+      <p>Every chain module is a thin bridge and carries no crypto. Bytes cross the boundary as plain number arrays, which the extension already does for Solana. The one exception is the full TronWeb SDK, which is a separate entry with TronWeb as a peer dependency so nobody pays for it by accident.</p>
+      <h3>Size targets</h3>
+      <div class="tablewrap">
+      <table>
+        <tr><th>Entry</th><th>Runtime deps</th><th>Target, gzipped</th></tr>
+        <tr><td class="mono">core + evm</td><td>none</td><td>&lt; 5 KB</td></tr>
+        <tr><td class="mono">solana</td><td>none, Wallet Standard constants inlined</td><td>&lt; 4 KB</td></tr>
+        <tr><td class="mono">cardano, xrp, btc</td><td>none</td><td>&lt; 4 KB each</td></tr>
+        <tr><td class="mono">tron</td><td>none, thin tronLink bridge</td><td>&lt; 3 KB</td></tr>
+        <tr><td class="mono">tron-full</td><td>tronweb peer + Buffer polyfill</td><td>whatever TronWeb costs, opt-in</td></tr>
+      </table>
+      </div>
+    </section>
+
+    <section id="transport">
+      <h2>Transport</h2>
+      <p>Two interfaces, one per side of the boundary. The page side is what the injected providers call; the host side is what the router is wired to. Each platform implements both halves in its own way.</p>
+<pre><code><span class="c">// page side, runs inside the dApp document</span>
+<span class="k">export interface</span> PageTransport {
+  post(env: PageToHost): void;
+  onMessage(handler: (env: HostToPage) =&gt; void): void;
+}
+
+<span class="c">// host side, runs in the service worker or the app process</span>
+<span class="k">export interface</span> HostTransport {
+  deliver(origin: string, env: HostToPage): void;
+  onMessage(handler: (origin: string, env: PageToHost) =&gt; void): void;
+}</code></pre>
+      <div class="tablewrap">
+      <table>
+        <tr><th></th><th>Extension</th><th>React Native WebView</th></tr>
+        <tr><td>page → host</td><td class="mono">window.postMessage → content script → runtime.sendMessage</td><td class="mono">ReactNativeWebView.postMessage(JSON)</td></tr>
+        <tr><td>host → page</td><td class="mono">tabs.sendMessage → content script → postMessage</td><td class="mono">injectJavaScript("__trustodianReceive(…)")</td></tr>
+        <tr><td>origin stamped by</td><td>content script, from <code>location.origin</code></td><td>native, from the committed navigation</td></tr>
+        <tr><td>tamper guard</td><td>isolated world</td><td>preamble captures <code>postMessage</code> before page scripts run</td></tr>
+        <tr><td>re-injection</td><td>per document by the browser</td><td>per load; the <code>__injected</code> guard makes it idempotent</td></tr>
+      </table>
+      </div>
+      <p>Origin is never read from the page. The mobile branch's rule that origin goes null during a cross-origin navigation moves into the package's origin helper so the extension gets the same guarantee if it ever needs it.</p>
+    </section>
+
+    <section id="host">
+      <h2>Host side and your modal</h2>
+      <p>The router is headless. It classifies a request, checks the session, and then hands every user-facing decision to a callback you supply. What you render is yours: the mobile bottom sheets, the extension's detached confirmation window, a native Swift sheet, or anything else.</p>
+      <p>Signing is the host's job entirely. <code>ui.sign</code> receives a parsed request and returns whatever the chain expects back. How the host produces that, from a local key, a vault iframe, an MPC service, or a hardware device, is invisible to the package. On afridax mobile today the sign callback pushes into the WalletConnect pending-request store so one modal serves both transports. That stays a mobile detail; the package has no WalletConnect import.</p>
+<pre><code><span class="k">export type</span> UiHandlers = {
+  <span class="c">// Show your connect prompt. Resolve with the chosen wallet, or null if declined.</span>
+  connect(req: ConnectRequest): Promise&lt;ConnectDecision | null&gt;;
+
+  <span class="c">// Show your sign prompt. Resolve with the signature / signed bytes / tx hash, or throw an RpcError.</span>
+  sign(req: SignRequest): Promise&lt;unknown&gt;;
+
+  <span class="c">// Optional. Default: silent switch if the chain is supported, 4902 otherwise.</span>
+  switchChain?(req: SwitchChainRequest): Promise&lt;boolean&gt;;
+};
+
+<span class="k">export type</span> Session = {
+  origin: string;
+  family: ChainFamily;
+  networkId: string;             <span class="c">// your id from NetworkDef</span>
+  accounts: string[];
+  walletId?: string;             <span class="c">// your wallet / vault reference, opaque to the package</span>
+  id?: string;                   <span class="c">// backend session id once persisted remotely</span>
+  createdAt: number;
+  lastUsedAt: number;
+};
+
+<span class="k">export type</span> SessionStore = {
+  get(origin: string, family: ChainFamily): Promise&lt;Session | null&gt;;
+  set(session: Session): Promise&lt;void&gt;;
+  clear(origin: string, family: ChainFamily): Promise&lt;void&gt;;
+  list(): Promise&lt;Session[]&gt;;
+  <span class="c">// Optional: the host tells the router a session ended elsewhere (backend revoke, other device).</span>
+  subscribe?(listener: (change: { origin: string; family: ChainFamily; session: Session | null }) =&gt; void): () =&gt; void;
+};
+
+<span class="k">export type</span> Policy = {
+  readRpc?: <span class="s">"allowlist"</span> | <span class="s">"none"</span> | ReadonlySet&lt;string&gt;;   <span class="c">// default "allowlist"</span>
+  silentReconnect?: boolean;                             <span class="c">// default true</span>
+  requestTimeoutMs?: number;                             <span class="c">// default 120_000</span>
+  supportedEvmChainIds?: ReadonlySet&lt;string&gt;;            <span class="c">// hex; default: all</span>
+};
+
+<span class="k">export function</span> createDappRouter(deps: {
+  networks: NetworkDef[];
+  sessions: SessionStore;
+  ui: UiHandlers;
+  rpc?: RpcClient;                       <span class="c">// required when policy.readRpc !== "none"</span>
+  emit: (origin: string, event: ProviderEvent) =&gt; void;
+  policy?: Policy;
+}): DappRouter;
+
+<span class="k">export interface</span> DappRouter {
+  handle(req: { origin: string; method: string; params?: unknown[] }): Promise&lt;RouterOutcome&gt;;
+  disconnect(origin: string, chain: ChainType): Promise&lt;void&gt;;   <span class="c">// clears session, emits, rejects in-flight</span>
+  rejectAll(origin: string): number;                              <span class="c">// on tab close</span>
+}</code></pre>
+      <h3>Sessions: local cache plus your backend</h3>
+      <p>The store is async so it can be backed by an API. dApps call <code>eth_accounts</code> on every page load, so the host keeps a local cache in front of the backend and writes through. The package ships a small helper for that shape; the backend client is yours.</p>
+<pre><code><span class="k">import</span> { layeredSessionStore } <span class="k">from</span> <span class="s">"inpage-wallet"</span>;
+
+<span class="k">const</span> sessions = layeredSessionStore({
+  local:  chromeStorageSessions,          <span class="c">// or MMKV on mobile: sync, answers reads</span>
+  remote: {                               <span class="c">// your API client, all optional</span>
+    upsert: (s) =&gt; api.post(<span class="s">"/dapp-sessions"</span>, s).then((r) =&gt; r.id),
+    remove: (id) =&gt; api.delete(<span class="s">`/dapp-sessions/${id}`</span>),
+    list:   () =&gt; api.get(<span class="s">"/dapp-sessions"</span>),
+  },
+  <span class="c">// On login or on a push notification, pull the backend list and reconcile:</span>
+  <span class="c">// sessions removed remotely are cleared locally and the router emits disconnect to the page.</span>
+});</code></pre>
+      <p>What the backend gains from this: a "connected dApps" list per user across extension and mobile, revoke from any device or from the admin panel, and an audit trail of which wallet was connected to which origin. What it never receives: key material, request params, or signatures. Those pass through <code>ui.sign</code> only.</p>
+      <div class="tablewrap">
+      <table>
+        <tr><th>Event</th><th>Local cache</th><th>Backend</th><th>Page</th></tr>
+        <tr><td>user approves connect</td><td>write</td><td>upsert, returns id</td><td>accountsChanged</td></tr>
+        <tr><td>dApp calls eth_accounts</td><td>read</td><td>nothing</td><td>answered from cache</td></tr>
+        <tr><td>user disconnects in app</td><td>clear</td><td>remove</td><td>disconnect event</td></tr>
+        <tr><td>revoked on another device</td><td>cleared on reconcile</td><td>source of truth</td><td>disconnect event on next reconcile</td></tr>
+        <tr><td>backend unreachable</td><td>still answers</td><td>retried later</td><td>unaffected</td></tr>
+      </table>
+      </div>
+      <p>The request objects are typed per method, so your modal never parses raw params. For an EIP-712 request, <code>req.typedData</code> is already the field tree that the mobile branch renders today. The same applies to an EVM transaction summary, a Solana transaction, and a Cardano transaction once those models exist.</p>
+<pre><code><span class="k">type</span> SignRequest =
+  | { chain: <span class="s">"evm"</span>;    method: <span class="s">"eth_signTypedData_v4"</span>; origin; session; typedData: Eip712Tree; raw: unknown[] }
+  | { chain: <span class="s">"evm"</span>;    method: <span class="s">"eth_sendTransaction"</span>;  origin; session; tx: EvmTxSummary;   raw: unknown[] }
+  | { chain: <span class="s">"evm"</span>;    method: <span class="s">"personal_sign"</span>;        origin; session; message: string;   raw: unknown[] }
+  | { chain: <span class="s">"solana"</span>; method: <span class="s">"solana_signTransaction"</span>; origin; session; txBytes: Uint8Array; raw: unknown[] }
+  | …</code></pre>
+      <div class="callout">
+        <p><b>Rule.</b> Every decision the router can make without asking must also be overridable through <code>Policy</code> or a callback. Read-only answers, the RPC allow-list, silent reconnect, and auto chain-switch each have a default and a switch.</p>
+      </div>
+      <h3>Optional default UI</h3>
+      <p>Not in the core. If a third product ever wants a working browser in a day, a separate <code>inpage-wallet-ui-rn</code> can ship a themeable connect sheet and sign modal that implement <code>UiHandlers</code>. The two current apps do not need it.</p>
+    </section>
+
+    <section id="lifecycle">
+      <h2>Request lifecycle</h2>
+      <p>One <code>eth_sendTransaction</code> from a dApp, end to end. The same path applies to every chain; only the classification and the model handed to the modal change.</p>
+      <figure>
+        <svg viewBox="0 0 760 330" role="img" aria-label="Sequence of a sign request: dApp calls provider.request, the injected provider posts an envelope over the transport, the router classifies it as sign, calls ui.sign with a parsed model, the host modal resolves, and the response travels back through the same hops to settle the dApp's promise.">
+          <defs>
+            <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <!-- lifelines -->
+          <g font-size="12" text-anchor="middle" fill="currentColor">
+            <text x="70" y="24">dApp</text>
+            <text x="220" y="24">injected provider</text>
+            <text x="370" y="24">transport</text>
+            <text x="520" y="24">router</text>
+            <text x="680" y="24">your modal</text>
+          </g>
+          <g stroke="currentColor" stroke-width="1" stroke-dasharray="3 4" opacity="0.5">
+            <line x1="70" y1="34" x2="70" y2="310"/>
+            <line x1="220" y1="34" x2="220" y2="310"/>
+            <line x1="370" y1="34" x2="370" y2="310"/>
+            <line x1="520" y1="34" x2="520" y2="310"/>
+            <line x1="680" y1="34" x2="680" y2="310"/>
+          </g>
+          <!-- package band -->
+          <rect x="150" y="36" width="440" height="270" rx="6" fill="var(--shared)" opacity="0.55"/>
+          <text x="158" y="52" font-size="10.5" fill="var(--accent-ink)" letter-spacing="1">PACKAGE</text>
+
+          <!-- messages forward -->
+          <g stroke="currentColor" stroke-width="1" fill="currentColor" font-size="11">
+            <line x1="70" y1="78" x2="218" y2="78" marker-end="url(#arr2)"/>
+            <text x="145" y="72" text-anchor="middle">request({ eth_sendTransaction })</text>
+
+            <line x1="220" y1="112" x2="368" y2="112" marker-end="url(#arr2)"/>
+            <text x="295" y="106" text-anchor="middle">post envelope { id, method, params }</text>
+
+            <line x1="370" y1="146" x2="518" y2="146" marker-end="url(#arr2)"/>
+            <text x="445" y="140" text-anchor="middle">handle({ origin, method, params })</text>
+
+            <line x1="520" y1="184" x2="678" y2="184" marker-end="url(#arr2)"/>
+            <text x="600" y="178" text-anchor="middle">ui.sign({ tx: EvmTxSummary, … })</text>
+          </g>
+          <!-- router internal note -->
+          <rect x="452" y="152" width="136" height="20" rx="3" fill="var(--surface)" stroke="currentColor" stroke-width="0.8"/>
+          <text x="520" y="166" font-size="10.5" text-anchor="middle" fill="currentColor">classify: sign · session ok</text>
+
+          <!-- modal activation -->
+          <rect x="672" y="184" width="16" height="44" rx="2" fill="var(--surface)" stroke="currentColor" stroke-width="1"/>
+          <text x="700" y="212" font-size="10.5" fill="currentColor" opacity="0.7">user approves</text>
+
+          <!-- messages back -->
+          <g stroke="currentColor" stroke-width="1" fill="currentColor" font-size="11">
+            <line x1="680" y1="228" x2="522" y2="228" marker-end="url(#arr2)"/>
+            <text x="600" y="243" text-anchor="middle">resolves txHash</text>
+
+            <line x1="520" y1="258" x2="372" y2="258" marker-end="url(#arr2)"/>
+            <text x="445" y="273" text-anchor="middle">{ result } or { error: 4001 }</text>
+
+            <line x1="370" y1="284" x2="222" y2="284" marker-end="url(#arr2)"/>
+            <text x="295" y="299" text-anchor="middle">deliver response { id, result }</text>
+
+            <line x1="220" y1="300" x2="72" y2="300" marker-end="url(#arr2)"/>
+            <text x="145" y="315" text-anchor="middle">promise settles</text>
+          </g>
+        </svg>
+        <figcaption>Correlation is by request id, generated in the page and echoed back. The modal never sees the transport and the page never sees the session. A timeout in the router rejects with 4001 if the modal never answers.</figcaption>
+      </figure>
+      <p>Read-only calls such as <code>eth_chainId</code> and <code>eth_accounts</code> short-circuit at the router and never reach a callback. Allow-listed RPC reads go to <code>deps.rpc</code>. Connect requests for an origin that already has a session return immediately. Only genuinely new decisions reach your UI.</p>
+    </section>
+
+    <section id="protocol">
+      <h2>Protocol contract</h2>
+      <p>The wire format is what both apps already speak, with the naming settled once. Unchanged values are kept byte-for-byte so a package upgrade never invalidates a saved dApp connection.</p>
+<pre><code><span class="k">export const</span> DEFAULT_CHANNEL = <span class="s">"inpage-wallet-v1"</span>;   <span class="c">// per-config; carried only between page and host of the same build, never persisted</span>
+
+<span class="k">export type</span> PageToHost =
+  | { kind: <span class="s">"ready"</span>; chains: ChainId[] }
+  | { kind: <span class="s">"request"</span>; id: string; method: string; params?: unknown[] };
+
+<span class="k">export type</span> HostToPage =
+  | { kind: <span class="s">"init"</span>; icon: string }
+  | { kind: <span class="s">"response"</span>; id: string; result?: unknown; error?: RpcError }
+  | { kind: <span class="s">"event"</span>; chain: ChainType; event: <span class="s">"accountsChanged"</span> | <span class="s">"chainChanged"</span> | <span class="s">"disconnect"</span>; data: unknown };
+
+<span class="k">export type</span> Envelope = { channel: string; direction: <span class="s">"page-to-host"</span> | <span class="s">"host-to-page"</span> } &amp; (PageToHost | HostToPage);
+
+<span class="c">// The typed method map is the part both routers hand-list today.</span>
+<span class="k">export interface</span> MethodMap {
+  eth_requestAccounts:   { params: [];                        result: string[] };
+  eth_sendTransaction:   { params: [EvmTxRequest];            result: string };
+  eth_signTypedData_v4:  { params: [string, string];          result: string };
+  solana_connect:        { params: [{ silent?: boolean }];    result: { address: string; publicKey: number[] } | null };
+  solana_signTransaction:{ params: [{ tx: number[] }];        result: { signedTx: number[] } };
+  cardano_signTx:        { params: [{ tx: string; partial?: boolean }]; result: string };
+  btc_signPsbt:          { params: [{ psbt: string }];        result: string };
+  <span class="c">// … one entry per method, per chain</span>
+}
+
+<span class="k">export const</span> classify: (method: string) =&gt; <span class="s">"readOnly"</span> | <span class="s">"readRpc"</span> | <span class="s">"connect"</span> | <span class="s">"disconnect"</span> | <span class="s">"switch"</span> | <span class="s">"sign"</span> | <span class="s">"unsupported"</span>;</code></pre>
+      <div class="tablewrap">
+      <table>
+        <tr><th>Field</th><th>Extension today</th><th>Mobile today</th><th>Package</th></tr>
+        <tr><td>direction names</td><td class="mono">dapp-to-extension</td><td class="mono">page-to-native</td><td class="mono">page-to-host</td></tr>
+        <tr><td>request timeout</td><td>180 s</td><td>90 s</td><td>policy, default 120 s</td></tr>
+        <tr><td>network</td><td>build-time env, Trustodian ids</td><td>runtime, afridax backend ids</td><td>host registry with host ids</td></tr>
+        <tr><td>sessions</td><td>chrome.storage only</td><td>MMKV only</td><td>async store, local cache + backend</td></tr>
+        <tr><td><code>window.ethereum</code></td><td>never</td><td>defined if absent</td><td>config, default off</td></tr>
+        <tr><td>channel</td><td class="mono">trustodian-provider-v1</td><td class="mono">trustodian-provider-v1</td><td>config, neutral default</td></tr>
+        <tr><td>read RPC proxy</td><td>unsupported</td><td>allow-list</td><td>policy, default allow-list</td></tr>
+        <tr><td>Solana constants</td><td>npm imports</td><td>inlined</td><td>inlined</td></tr>
+      </table>
+      </div>
+    </section>
+
+    <section id="build">
+      <h2>Build outputs</h2>
+      <p>One source tree, three shapes of output. The package builds with tsup or Vite lib mode for the ESM parts, and a small script that runs Vite in IIFE mode once per chain for the injected bundles.</p>
+      <div class="tablewrap">
+      <table>
+        <tr><th>Output</th><th>Consumer</th><th>How it is loaded</th></tr>
+        <tr><td class="mono">dist/host/*.js + .d.ts</td><td>both apps</td><td>normal ESM import of the router, origin helper, models</td></tr>
+        <tr><td class="mono">dist/injected/&lt;chain&gt;.js</td><td>extension, Chrome</td><td>imported by a 3-line content-script entry, bundled by crxjs as today</td></tr>
+        <tr><td class="mono">dist/injected/&lt;chain&gt;.iife.js</td><td>extension, Firefox and Safari</td><td>registered at runtime via scripting.registerContentScripts, replacing build-mainworld-injectors.mjs</td></tr>
+        <tr><td class="mono">dist/script/index.js</td><td>afridax mobile</td><td><code>buildInjectedScript(config)</code> concatenates the preamble plus the selected IIFEs, serializes config, returns a string for the WebView</td></tr>
+      </table>
+      </div>
+      <p>The IIFE strings are embedded into the script builder at build time, so the mobile app imports one function and no file system access is needed at runtime.</p>
+    </section>
+
+    <section id="usage">
+      <h2>Usage in both apps</h2>
+      <div class="two">
+        <div>
+          <h3>Extension</h3>
+<pre><code><span class="c">// src/provider/inject.ts (Chrome content script)</span>
+<span class="k">import</span> { createInjectedWallet } <span class="k">from</span> <span class="s">"inpage-wallet/injected"</span>;
+<span class="k">import</span> { postMessageTransport } <span class="k">from</span> <span class="s">"inpage-wallet/transports/post-message"</span>;
+<span class="k">import</span> { IDENTITY } <span class="k">from</span> <span class="s">"./identity"</span>;
+
+createInjectedWallet(postMessageTransport(), {
+  identity: IDENTITY,
+  networks: NETWORKS,               <span class="c">// from your own chain registry</span>
+});
+
+<span class="c">// src/background/providerRouter.ts</span>
+<span class="k">const</span> router = createDappRouter({
+  networks: NETWORKS,
+  sessions: layeredSessionStore({ local: chromeStorageSessions, remote: api.dappSessions }),
+  ui: {
+    connect: (req) =&gt; openConfirmationWindow(<span class="s">"connect"</span>, req),
+    sign:    (req) =&gt; openConfirmationWindow(<span class="s">"sign"</span>, req),
+  },
+  rpc: evmRpc,
+  emit: (origin, ev) =&gt; broadcastToTabs(origin, ev),
+  policy: { requestTimeoutMs: 180_000 },
+});</code></pre>
+        </div>
+        <div>
+          <h3>afridax mobile</h3>
+<pre><code><span class="c">// components/dapp-browser/dapp-webview.tsx</span>
+<span class="k">import</span> { buildInjectedScript } <span class="k">from</span> <span class="s">"inpage-wallet/script"</span>;
+<span class="k">import</span> { createDappRouter } <span class="k">from</span> <span class="s">"inpage-wallet"</span>;
+
+<span class="k">const</span> injected = buildInjectedScript({
+  identity: IDENTITY,
+  networks: NETWORKS,               <span class="c">// built from CHAIN_META, same ids as the backend</span>
+  legacyGlobals: { ethereum: <span class="k">true</span> },
+});
+
+<span class="k">const</span> router = createDappRouter({
+  networks: NETWORKS,
+  sessions: layeredSessionStore({ local: mmkvSessions, remote: api.dappSessions }),
+  ui: {
+    connect: (req) =&gt; openConnectSheet(req),      <span class="c">// your bottom sheet</span>
+    sign:    (req) =&gt; openSignModal(req),          <span class="c">// reuses the WalletConnect modal</span>
+  },
+  rpc: readEvmRpc,
+  emit: (origin, ev) =&gt; deliverToWebView(origin, ev),
+  policy: { requestTimeoutMs: 90_000 },
+});
+
+&lt;WebView
+  injectedJavaScriptBeforeContentLoaded={injected}
+  onMessage={(e) =&gt; rnTransport.receive(committedOrigin, e)}
+/&gt;</code></pre>
+        </div>
+      </div>
+      <p>Both apps keep their current user experience unchanged. The extension keeps its detached window and its 180 second timeout. Mobile keeps its sheets, MMKV, and the WalletConnect responder. What they stop doing is maintaining two copies of the protocol. The <code>IDENTITY</code> object in each app is the only place the Trustodian name, rdns, and uuid exist.</p>
+    </section>
+
+    <section id="public">
+      <h2>Public repository</h2>
+      <p>Open-sourcing injected wallet code is normal practice. MetaMask, Phantom, Rabby, and Coinbase Wallet all publish theirs, and dApp maintainers expect to read it when debugging a connection. What matters is that nothing product-specific rides along.</p>
+      <h3>What the repo contains</h3>
+      <ul>
+        <li><b>License.</b> MIT. Short, permissive, what every wallet SDK in the ecosystem uses, and no patent clause to explain to a partner's legal team.</li>
+        <li><b>CI on every pull request.</b> Typecheck, unit tests with vitest, the jsdom announce tests for every chain IIFE, and a size-limit check against the targets above so a stray import cannot double the EVM bundle unnoticed.</li>
+        <li><b>Releases through changesets.</b> Each PR adds a changeset; merging to main opens a version PR; merging that publishes to npm with provenance from GitHub Actions. No publishing from a laptop.</li>
+        <li><b>Examples that run.</b> A minimal MV3 extension and a minimal Expo WebView screen, each wired with a plain confirm dialog as the modal. They double as smoke tests for the two transports.</li>
+        <li><b>A protocol document.</b> The envelope, the method map, and the error codes as prose, versioned with the package, so a host written in Swift or Kotlin someday can implement the host side without reading TypeScript.</li>
+      </ul>
+      <h3>What must never be in it</h3>
+      <ul>
+        <li>Wallet identity: name, rdns, uuid, icon. These live in each consuming app and arrive as config.</li>
+        <li>RPC endpoints, Blockfrost or TronGrid keys, and any host URL. The read-RPC proxy calls a function the host supplies.</li>
+        <li>The test dApps and any signing, key, or vault code from either app. The package stops at the sign callback.</li>
+      </ul>
+      <h3>Local first, npm later</h3>
+      <p>The repo is separate from day one but stays unpublished until the API settles. <code>package.json</code> is written as if publishing today: <code>exports</code> map, <code>files</code>, <code>sideEffects: false</code>, <code>publishConfig.access: public</code>, and a <code>prepare</code> script that builds <code>dist/</code>. That way consumers install from a path now and from npm later with no change to their imports.</p>
+      <div class="tablewrap">
+      <table>
+        <tr><th>Phase</th><th>Extension (pnpm)</th><th>afridax mobile (npm + Metro)</th></tr>
+        <tr><td>local</td><td class="mono">"inpage-wallet": "link:../../inpage-wallet"</td><td class="mono">yalc add inpage-wallet</td></tr>
+        <tr><td>published</td><td class="mono">"inpage-wallet": "^1.0.0"</td><td class="mono">"inpage-wallet": "^1.0.0"</td></tr>
+      </table>
+      </div>
+      <p>yalc for mobile rather than a symlink, because Metro resolves symlinked packages unreliably across Expo versions and copying sidesteps it. When the first npm release goes out, the only change in either app is the version specifier.</p>
+      <h3>Consumers beyond these two</h3>
+      <p>Any wallet that renders a web page and can execute script in it can host the package: another browser extension, an Electron or Tauri desktop wallet, a Flutter or native app with a WebView. The injected side is the same IIFE string in every case. The host side needs a <code>HostTransport</code> for that platform, about fifty lines, and the three callbacks. A host not written in TypeScript implements the protocol document instead of importing the router.</p>
+      <h3>Versioning</h3>
+      <div class="tablewrap">
+      <table>
+        <tr><th>Change</th><th>Bump</th></tr>
+        <tr><td>New chain, new optional config, new parsed model</td><td>minor</td></tr>
+        <tr><td>Bug fix inside a provider or the router</td><td>patch</td></tr>
+        <tr><td>Envelope shape, method map, or default channel changes</td><td>major, and the channel suffix moves with it</td></tr>
+      </table>
+      </div>
+      <p>Because the channel is only spoken between a page and a host built from the same version, a major bump never breaks a user's saved dApp connections. Those are keyed on identity, which the package does not own.</p>
+    </section>
+
+    <section id="migration">
+      <h2>Migration</h2>
+      <p>The extraction runs in two directions. Injected providers come from the extension, because they are typed and cover seven chains. The router and origin helper come from mobile, because they are pure and tested. Each step leaves both apps working.</p>
+      <ol class="steps">
+        <li><div><b>Create the repository</b><p>A separate local git repo with license, CI, changesets, and a publish-ready package.json, but no npm release yet. Then the protocol module, both transport interfaces, typed method map, build scripts, and the jsdom announce test.</p></div></li>
+        <li><div><b>Port the seven injectors</b><p>Copy each in as a factory over PageTransport, stripping identity and network into config. The extension links the local package and its src/provider files shrink to a few lines. Firefox and Safari load the package IIFEs. Verified against test-dapps. No behavior change.</p></div></li>
+        <li><div><b>Lift the router from mobile</b><p>bridge-router.ts, origin.ts, and their tests move in with the callback names generalized and the app's EChainType replaced by the package's own. request-bridge.ts, which touches WalletConnect, stays on mobile. providerRouter.ts in the extension becomes a thin adapter and gains the read RPC allow-list for free.</p></div></li>
+        <li><div><b>Add the React Native transport and script builder</b><p>Replace the two hand-written templates on mobile with package output. Fix the empty-icon init on the way. Settle the window.ethereum policy as config.</p></div></li>
+        <li><div><b>Consume from mobile via yalc</b><p>afridax mobile takes the local package. Cardano, Tron, XRP, and BTC become one line each once mobile has host handlers for them.</p></div></li>
+        <li><div><b>Add the backend session sync</b><p>A dapp-sessions resource on the afridax backend, and the remote half of the layered store in both apps. Local-only storage keeps working until then, so this step can land independently.</p></div></li>
+        <li><div><b>Publish 1.0 when the API stops moving</b><p>Claim the npm scope, publish from CI, and switch both apps from path installs to a version. Protocol changes after 1.0 bump the major and the default channel suffix together.</p></div></li>
+      </ol>
+      <div class="callout warn">
+        <p><b>Sequencing.</b> AFX-1119 is unmerged and still receiving fixes. Start the package after that branch lands so step 3 lifts a stable router instead of chasing one.</p>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <h2>Open decisions</h2>
+      <ul>
+        <li><b>window.ethereum.</b> Keep the extension strict and mobile permissive through config, or align both. Recommendation: off by default, on for mobile only, because in-app browsers meet older dApps that never adopted EIP-6963.</li>
+        <li><b>Backend session schema.</b> Which fields the backend stores per session and who can revoke. Proposal: origin, family, networkId, accounts, walletId, device, createdAt, lastUsedAt; revoke by user from any device and by admin.</li>
+        <li><b>Tron.</b> Ship the thin tronLink bridge as the default and keep the full TronWeb entry for the extension only. Mobile decides when it adds Tron.</li>
+        <li><b>Solana signing on mobile.</b> The provider announces sign features that the host rejects today. Either finish the host side before the package lands on mobile, or let the config drop the unsupported features from the announcement.</li>
+        <li><b>Reserve the name.</b> inpage-wallet is free on npm today. Unscoped names get squatted; publish a 0.0.1 placeholder early even though real releases wait for the API to settle.</li>
+        <li><b>GitHub org.</b> The repo can sit under the afridax org or a neutral one; the package name does not depend on it and a transfer later keeps the npm name.</li>
+        <li><b>What triggers 1.0.</b> Recommendation: both apps running on the package in production for one release cycle with no protocol change. Until then the version stays 0.x and breaking changes are allowed.</li>
+      </ul>
+    </section>
+  </main>
+</div>
