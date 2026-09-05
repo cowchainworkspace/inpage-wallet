@@ -57,6 +57,18 @@ export type SwitchChainRequest = {
   signal: AbortSignal;
 };
 
+/** One signed transaction on its way to the network. Requires a session. */
+export type SubmitRequest = {
+  origin: string;
+  family: ChainFamily;
+  method: string;
+  session: Session;
+  network: NetworkDef | null;
+  raw: unknown[];
+  /** Aborts when the request is cancelled or times out: close the modal. */
+  signal: AbortSignal;
+};
+
 export type AddChainRequest = {
   origin: string;
   method: string;
@@ -134,6 +146,8 @@ export type UiHandlers = {
   switchChain?: ((req: SwitchChainRequest) => Promise<boolean>) | undefined;
   /** Default: 4902. Return a NetworkDef to register it and complete the switch. */
   addChain?: ((req: AddChainRequest) => Promise<NetworkDef | null>) | undefined;
+  /** Default: forward to `rpc`. Broadcasting is not a read, so it can be gated. */
+  submit?: ((req: SubmitRequest) => Promise<unknown>) | undefined;
 };
 
 export type RpcRequest = {
@@ -149,6 +163,11 @@ export type RpcClient = (req: RpcRequest) => Promise<unknown>;
 
 export type Policy = {
   readRpc?: ReadRpcPolicy | undefined;
+  /**
+   * Refuse reads for an origin with no session. Default true: an allow-listed
+   * read still spends the host's node quota and tells the page the wallet is here.
+   */
+  readRpcRequiresSession?: boolean | undefined;
   /** Answer a connect from an existing session without opening UI. Default true. */
   silentReconnect?: boolean | undefined;
   requestTimeoutMs?: number | undefined;
@@ -243,6 +262,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
   const networks: NetworkDef[] = [...deps.networks];
   const policy = deps.policy ?? {};
   const readRpc: ReadRpcPolicy = policy.readRpc ?? "allowlist";
+  const readRpcRequiresSession = policy.readRpcRequiresSession !== false;
   const silentReconnect = policy.silentReconnect !== false;
   const timeoutMs = policy.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -312,6 +332,31 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
   const emitFor = (origin: string, family: ChainFamily, event: ProviderEvent["event"], data: unknown): void => {
     deps.emit(origin, { family, event, data });
   };
+
+  async function callRpc(
+    family: ChainFamily,
+    network: NetworkDef,
+    method: string,
+    params: unknown[],
+  ): Promise<RouterOutcome> {
+    const rpc = deps.rpc;
+    if (!rpc) return { error: unsupportedMethod(method) };
+    try {
+      return {
+        result: await rpc({
+          family,
+          networkId: network.id,
+          chainId: network.wire.evmChainId ?? null,
+          method,
+          params,
+        }),
+      };
+    } catch (error) {
+      return {
+        error: rpcError(RPC_INTERNAL, error instanceof Error ? error.message : "RPC request failed"),
+      };
+    }
+  }
 
   // --- read-only ------------------------------------------------------------
 
@@ -733,26 +778,35 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
       case "readRpc": {
         if (!deps.rpc) return { error: unsupportedMethod(req.method) };
         const session = await deps.sessions.get(req.origin, family);
+        if (readRpcRequiresSession && (!session || session.accounts.length === 0)) {
+          return { error: unauthorized() };
+        }
         const network = networkOf(session, family);
         if (!network) return { error: unsupportedMethod(req.method) };
-        try {
-          return {
-            result: await deps.rpc({
+        return callRpc(family, network, req.method, params);
+      }
+      case "submit": {
+        const session = await deps.sessions.get(req.origin, family);
+        if (!session || session.accounts.length === 0) return { error: unauthorized() };
+        const network = networkOf(session, family);
+        const ask = deps.ui.submit;
+        if (ask) {
+          const result = await decide(controller, () =>
+            ask({
+              origin: req.origin,
               family,
-              networkId: network.id,
-              chainId: network.wire.evmChainId ?? null,
               method: req.method,
-              params,
+              session,
+              network,
+              raw: params,
+              signal: controller.signal,
             }),
-          };
-        } catch (error) {
-          return {
-            error: rpcError(
-              RPC_INTERNAL,
-              error instanceof Error ? error.message : "RPC request failed",
-            ),
-          };
+          );
+          if (controller.signal.aborted) return { error: userRejected() };
+          return { result };
         }
+        if (!deps.rpc || !network) return { error: unsupportedMethod(req.method) };
+        return callRpc(family, network, req.method, params);
       }
       case "connect":
         return connect(req.origin, family, req.method, params, controller);

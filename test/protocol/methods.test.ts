@@ -28,6 +28,7 @@ describe("classify", () => {
     expect(classify("solana_disconnect")).toBe("disconnect");
     expect(classify("wallet_switchEthereumChain")).toBe("switch");
     expect(classify("eth_signTypedData_v4")).toBe("sign");
+    expect(classify("cardano_submitTx")).toBe("submit");
     expect(classify("eth_nonsense")).toBe("unsupported");
   });
 

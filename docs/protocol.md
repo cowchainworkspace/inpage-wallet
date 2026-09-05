@@ -118,8 +118,8 @@ to what each standard needs: `evmChainId` (hex), `walletStandardChain`,
 ## Methods
 
 Classification decides the route. `classify(method)` returns one of `readOnly`,
-`readRpc`, `connect`, `disconnect`, `switch`, `sign`, `unsupported`. The family
-comes from the method prefix (`solana_`, `cardano_`, `tron_`, `xrpl_`, `btc_`);
+`readRpc`, `submit`, `connect`, `disconnect`, `switch`, `sign`, `unsupported`.
+The family comes from the method prefix (`solana_`, `cardano_`, `tron_`, `xrpl_`, `btc_`);
 un-prefixed methods are EVM.
 
 ### readOnly — answered from the session, never a prompt
@@ -141,10 +141,21 @@ drive an arbitrary node through the wallet.
 `eth_getBalance`, `eth_getBlockByNumber`, `eth_getCode`, `eth_getLogs`,
 `eth_getStorageAt`, `eth_getTransactionByHash`, `eth_getTransactionCount`,
 `eth_getTransactionReceipt`, `eth_maxPriorityFeePerGas`, `cardano_getBalance`,
-`cardano_getUtxos`, `cardano_getCollateral`, `cardano_submitTx`.
+`cardano_getUtxos`, `cardano_getCollateral`.
+
+Reads require a session. An origin that never connected gets `4100`: an
+allow-listed read still spends the host's node quota and confirms to the page
+that a wallet is here. `policy.readRpcRequiresSession: false` opts out.
 
 The host can replace the list or refuse reads entirely. A refused read is
 `unsupported`, not an error.
+
+### submit — broadcasts a signed transaction
+
+`cardano_submitTx`. Not a read: it spends. It requires a session, it is not
+reachable through the read allow-list, and it goes to `ui.submit` when the host
+supplies one so the broadcast can be gated or logged. Without that callback it
+falls through to the host's node client, still only with a session.
 
 ### connect
 

@@ -139,6 +139,10 @@ describe("read-only methods answer locally and never prompt", () => {
 });
 
 describe("read RPC passthrough", () => {
+  beforeEach(() => {
+    h = harness([session({ family: "evm" })]);
+  });
+
   it("proxies an allow-listed method to the node", async () => {
     const out = await h.router.handle({
       origin: ORIGIN,
@@ -174,7 +178,7 @@ describe("read RPC passthrough", () => {
   });
 
   it("refuses every read when the policy is none", async () => {
-    h = harness([], { policy: { readRpc: "none" } });
+    h = harness([session({ family: "evm" })], { policy: { readRpc: "none" } });
 
     const out = await h.router.handle({ origin: ORIGIN, method: "eth_call", params: [] });
 
@@ -183,7 +187,9 @@ describe("read RPC passthrough", () => {
   });
 
   it("honours a custom allow-list", async () => {
-    h = harness([], { policy: { readRpc: new Set(["eth_blockNumber"]) } });
+    h = harness([session({ family: "evm" })], {
+      policy: { readRpc: new Set(["eth_blockNumber"]) },
+    });
 
     expect(await h.router.handle({ origin: ORIGIN, method: "eth_blockNumber" })).toEqual({
       result: "0x2a",
@@ -193,10 +199,29 @@ describe("read RPC passthrough", () => {
     });
   });
 
+  it("refuses a read for an origin with no session", async () => {
+    h = harness();
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_getBalance", params: [] });
+
+    expect(out).toEqual({
+      error: { code: 4100, message: "Unauthorized — connect the wallet first" },
+    });
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it("serves an unconnected origin when the host turns the gate off", async () => {
+    h = harness([], { policy: { readRpcRequiresSession: false } });
+
+    expect(await h.router.handle({ origin: ORIGIN, method: "eth_blockNumber" })).toEqual({
+      result: "0x2a",
+    });
+  });
+
   it("is unsupported when the host wired no rpc client", async () => {
     const router = createDappRouter({
       networks: NETWORKS,
-      sessions: memorySessionStore(),
+      sessions: memorySessionStore([session({ family: "evm" })]),
       ui: { connect: vi.fn(async () => null), sign: vi.fn(async () => "0x") },
       emit: () => {},
     });
@@ -204,6 +229,65 @@ describe("read RPC passthrough", () => {
     expect(await router.handle({ origin: ORIGIN, method: "eth_call" })).toEqual({
       error: { code: 4200, message: "Unsupported method: eth_call" },
     });
+  });
+});
+
+describe("cardano_submitTx is a submit, not a read", () => {
+  it("refuses an origin with no session", async () => {
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "cardano_submitTx",
+      params: [{ tx: "abcd" }],
+    });
+
+    expect(out).toEqual({
+      error: { code: 4100, message: "Unauthorized — connect the wallet first" },
+    });
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it("forwards to the node when the host wired no submit callback", async () => {
+    h = harness([session({ family: "cardano", accounts: ["addr1"] })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "cardano_submitTx",
+      params: [{ tx: "abcd" }],
+    });
+
+    expect(out).toEqual({ result: "0x2a" });
+    expect(h.rpc).toHaveBeenCalledWith(
+      expect.objectContaining({ family: "cardano", method: "cardano_submitTx" }),
+    );
+  });
+
+  it("goes through ui.submit when the host supplies one", async () => {
+    const submit = vi.fn(async () => "tx-hash");
+    h = harness([session({ family: "cardano", accounts: ["addr1"] })], {
+      ui: { connect: vi.fn(async () => null), sign: vi.fn(async () => "0x"), submit },
+    });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "cardano_submitTx",
+      params: [{ tx: "abcd" }],
+    });
+
+    expect(out).toEqual({ result: "tx-hash" });
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ origin: ORIGIN, family: "cardano", method: "cardano_submitTx" }),
+    );
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
+  it("is not reachable through the read allow-list", async () => {
+    h = harness([session({ family: "cardano", accounts: ["addr1"] })], {
+      policy: { readRpc: "none" },
+    });
+
+    expect(
+      await h.router.handle({ origin: ORIGIN, method: "cardano_submitTx", params: [{ tx: "a" }] }),
+    ).toEqual({ result: "0x2a" });
   });
 });
 

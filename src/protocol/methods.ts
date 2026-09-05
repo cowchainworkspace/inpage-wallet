@@ -108,6 +108,7 @@ export type Method = keyof MethodMap;
 export type MethodKind =
   | "readOnly"
   | "readRpc"
+  | "submit"
   | "connect"
   | "disconnect"
   | "switch"
@@ -152,8 +153,13 @@ export const DEFAULT_READ_RPC_METHODS: ReadonlySet<string> = new Set([
   "cardano_getBalance",
   "cardano_getUtxos",
   "cardano_getCollateral",
-  "cardano_submitTx",
 ]);
+
+/**
+ * Broadcasts a signed transaction. Not a read: it spends, it needs a session,
+ * and a host that wants to see it before it goes out gets its own callback.
+ */
+export const SUBMIT_METHODS: ReadonlySet<string> = new Set(["cardano_submitTx"]);
 
 export const CONNECT_METHODS: ReadonlySet<string> = new Set([
   "eth_requestAccounts",
@@ -218,6 +224,7 @@ export function familyOf(method: string): ChainFamily {
 export function classify(method: string): MethodKind {
   if (READ_ONLY_METHODS.has(method)) return "readOnly";
   if (DEFAULT_READ_RPC_METHODS.has(method)) return "readRpc";
+  if (SUBMIT_METHODS.has(method)) return "submit";
   if (CONNECT_METHODS.has(method)) return "connect";
   if (DISCONNECT_METHODS.has(method)) return "disconnect";
   if (SWITCH_METHODS.has(method)) return "switch";

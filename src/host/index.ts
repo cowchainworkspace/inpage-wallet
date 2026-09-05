@@ -31,6 +31,7 @@ export {
   type RpcClient,
   type RpcRequest,
   type SignRequest,
+  type SubmitRequest,
   type SwitchChainRequest,
   type UiHandlers,
 } from "./router";

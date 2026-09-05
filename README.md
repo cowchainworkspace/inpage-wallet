@@ -209,6 +209,7 @@ Every decision the router can make without asking is overridable.
 ```ts
 policy: {
   readRpc: "allowlist",        // "none", or a ReadonlySet of your own
+  readRpcRequiresSession: true, // an unconnected origin gets 4100, not your node
   silentReconnect: true,       // answer connect from an existing session with no UI
   requestTimeoutMs: 120_000,   // then the request answers 4001
   supportedEvmChainIds: undefined, // hex set; default is every registered EVM network
