@@ -2,6 +2,7 @@ import { familiesOf } from "../protocol/networks";
 import { createBridge, type Bridge } from "./core/bridge";
 import { initialIcon, type InjectedConfig } from "./core/config";
 import type { PageTransport } from "./core/transport";
+import { installBtc } from "./chains/btc";
 import { installCardano } from "./chains/cardano";
 import { installEvm } from "./chains/evm";
 import { installSolana } from "./chains/solana";
@@ -51,7 +52,8 @@ export function createInjectedWallet(transport: PageTransport, config: InjectedC
         installXrp(bridge, config);
         installXrpStandard(bridge, config);
         break;
-      default:
+      case "btc":
+        installBtc(bridge, config);
         break;
     }
   }

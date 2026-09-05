@@ -95,7 +95,7 @@ export interface MethodMap {
   // --- Bitcoin, Wallet Standard ---
   btc_requestAccounts: {
     params: [Record<string, never>];
-    result: { address: string; publicKey?: string; addressType?: string } | null;
+    result: { address: string; publicKey?: number[]; addressType?: string } | null;
   };
   btc_disconnect: { params: []; result: null };
   btc_accounts: { params: []; result: string[] };
