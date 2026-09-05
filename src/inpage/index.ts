@@ -5,6 +5,7 @@ import type { PageTransport } from "./core/transport";
 import { installCardano } from "./chains/cardano";
 import { installEvm } from "./chains/evm";
 import { installSolana } from "./chains/solana";
+import { installTron } from "./chains/tron";
 
 export { createBridge, newRequestId, rpcException, type Bridge } from "./core/bridge";
 export { FALLBACK_ICON, initialIcon, type InjectedConfig, type WalletIdentity } from "./core/config";
@@ -40,6 +41,9 @@ export function createInjectedWallet(transport: PageTransport, config: InjectedC
         break;
       case "cardano":
         installCardano(bridge, config);
+        break;
+      case "tron":
+        installTron(bridge, config);
         break;
       default:
         break;
