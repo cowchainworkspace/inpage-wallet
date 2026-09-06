@@ -226,6 +226,29 @@ policy: {
 }
 ```
 
+## Host side
+
+**`policy.canReuseSession`** decides, per connect, whether an existing session
+answers silently or the router opens `ui.connect` again. It is consulted only
+when a session with accounts already exists; `silentReconnect` is the default
+it falls back to when the hook is absent.
+
+```ts
+policy: {
+  // The extension pins a session to the workspace active when it was created;
+  // a connect from a page while a different workspace is active must re-prompt.
+  canReuseSession: (session, req) => session.walletId === activeWorkspaceId(),
+}
+```
+
+Returning `false` does not throw the session away: `ui.connect` receives it as
+`req.existing`, so the confirmation UI can preselect or show the previous
+wallet. If the user picks the same wallet again, resolve with
+`{ accounts, reuse: true }` and the router keeps the existing session — same
+id, same `createdAt`, only `lastUsedAt` bumped — instead of writing a new one.
+A silent reconnect (`{ silent: true }` in the request params) still never opens
+UI, even when the hook returns `false`.
+
 ## What this package will never contain
 
 Wallet identity, RPC endpoints, API keys, host URLs, signing code, or key

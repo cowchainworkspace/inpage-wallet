@@ -30,6 +30,8 @@ export type ConnectRequest = {
   /** The network that will back the session unless the decision names another. */
   network: NetworkDef | null;
   raw: unknown[];
+  /** The session `policy.canReuseSession` declined to reuse silently, if any. */
+  existing: Session | null;
   /** Aborts when the request is cancelled or times out: close the modal. */
   signal: AbortSignal;
 };
@@ -43,6 +45,8 @@ export type ConnectDecision = {
   publicKey?: number[] | undefined;
   /** BTC only, e.g. "p2wpkh". */
   addressType?: string | undefined;
+  /** With `ConnectRequest.existing` present, keep that session instead of writing a new one. */
+  reuse?: boolean | undefined;
 };
 
 export type SwitchChainRequest = {
@@ -171,6 +175,19 @@ export type Policy = {
   readRpcRequiresSession?: boolean | undefined;
   /** Answer a connect from an existing session without opening UI. Default true. */
   silentReconnect?: boolean | undefined;
+  /**
+   * Called instead of `silentReconnect` when an existing session with accounts is
+   * found on a connect. `true` answers from the session with no UI, `false` opens
+   * `ui.connect` exactly as if no session existed, with `existing` carrying it.
+   * Ignored (falls back to `silentReconnect`) when absent. A throw is treated as
+   * `false`.
+   */
+  canReuseSession?:
+    | ((
+        session: Session,
+        req: { origin: string; family: ChainFamily; method: string; raw: unknown[] },
+      ) => boolean | Promise<boolean>)
+    | undefined;
   requestTimeoutMs?: number | undefined;
   /** Hex ids. Default: every registered EVM network. */
   supportedEvmChainIds?: ReadonlySet<string> | undefined;
@@ -451,6 +468,19 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     }
   }
 
+  async function reuseExisting(
+    session: Session,
+    req: { origin: string; family: ChainFamily; method: string; raw: unknown[] },
+  ): Promise<boolean> {
+    const hook = policy.canReuseSession;
+    if (!hook) return silentReconnect;
+    try {
+      return await hook(session, req);
+    } catch {
+      return false;
+    }
+  }
+
   async function runConnect(
     origin: string,
     family: ChainFamily,
@@ -459,8 +489,11 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     controller: AbortController,
   ): Promise<RouterOutcome> {
     const existing = await deps.sessions.get(origin, family);
-    if (silentReconnect && existing && existing.accounts.length > 0) {
-      return { result: connectResult(family, existing, networkOf(origin, existing, family)) };
+    if (existing && existing.accounts.length > 0) {
+      const reuse = await reuseExisting(existing, { origin, family, method, raw: params });
+      if (reuse) {
+        return { result: connectResult(family, existing, networkOf(origin, existing, family)) };
+      }
     }
 
     // An eager reconnect must never open UI when there is nothing to reconnect to.
@@ -475,12 +508,19 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
         method,
         network: fallback,
         raw: params,
+        existing,
         signal: controller.signal,
       }),
     );
     // A decision that arrives after the request was cancelled changes nothing.
     if (controller.signal.aborted) return { error: userRejected() };
     if (!decision || decision.accounts.length === 0) return { error: userRejected() };
+
+    if (decision.reuse && existing) {
+      const kept: Session = { ...existing, lastUsedAt: Date.now() };
+      await deps.sessions.set(kept);
+      return { result: connectResult(family, kept, networkOf(origin, kept, family)) };
+    }
 
     const chosen = networkById(visible(origin), decision.networkId) ?? fallback;
     if (!chosen) {

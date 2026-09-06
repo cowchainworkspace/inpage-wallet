@@ -182,10 +182,15 @@ falls through to the host's node client, still only with a session.
 `cardano_enable`, `tron_requestAccounts`, `xrpl_requestAccounts`,
 `btc_requestAccounts`.
 
-An origin that already has a session is answered immediately. A request carrying
-`{ silent: true }` and no session answers `null` and never opens UI — that is how
-an eager reconnect on page load stays silent. Concurrent connects for one origin
-and family are coalesced into a single prompt.
+An origin that already has a session is answered immediately, unless the host's
+`policy.canReuseSession` says otherwise for that session and request — a host
+that scopes sessions to something the protocol does not model (a workspace, a
+profile) can refuse the silent answer and re-prompt with the existing session
+attached, so its UI can preselect the previous wallet instead of starting over.
+A request carrying `{ silent: true }` and no session answers `null` and never
+opens UI — that is how an eager reconnect on page load stays silent, and it
+takes priority even when `canReuseSession` refused. Concurrent connects for one
+origin and family are coalesced into a single prompt.
 
 Results per family:
 

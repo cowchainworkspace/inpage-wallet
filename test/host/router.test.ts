@@ -382,6 +382,88 @@ describe("connect", () => {
   });
 });
 
+describe("policy.canReuseSession", () => {
+  it("opens ui.connect with the existing session when the hook returns false", async () => {
+    const existing = session({ family: "evm" });
+    const canReuseSession = vi.fn(async () => false);
+    h = harness([existing], { policy: { canReuseSession } });
+    h.connect.mockResolvedValue({ accounts: [EVM_ADDRESS] });
+
+    await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(canReuseSession).toHaveBeenCalledWith(
+      existing,
+      expect.objectContaining({ origin: ORIGIN, family: "evm", method: "eth_requestAccounts" }),
+    );
+    expect(h.connect).toHaveBeenCalledWith(expect.objectContaining({ existing }));
+  });
+
+  it("answers from the session with no UI when the hook returns true", async () => {
+    const canReuseSession = vi.fn(async () => true);
+    h = harness([session({ family: "evm" })], { policy: { canReuseSession } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(out).toEqual({ result: [EVM_ADDRESS] });
+    expect(h.connect).not.toHaveBeenCalled();
+  });
+
+  it("never opens UI for a silent connect even when the hook returns false", async () => {
+    const canReuseSession = vi.fn(async () => false);
+    h = harness([session({ family: "evm" })], { policy: { canReuseSession } });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "eth_requestAccounts",
+      params: [{ silent: true }],
+    });
+
+    expect(out).toEqual({ result: null });
+    expect(h.connect).not.toHaveBeenCalled();
+  });
+
+  it("supports an async hook", async () => {
+    const canReuseSession = vi.fn(
+      () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 0)),
+    );
+    h = harness([session({ family: "evm" })], { policy: { canReuseSession } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(out).toEqual({ result: [EVM_ADDRESS] });
+    expect(h.connect).not.toHaveBeenCalled();
+  });
+
+  it("treats a throwing hook as false and still prompts", async () => {
+    const canReuseSession = vi.fn(() => {
+      throw new Error("boom");
+    });
+    h = harness([session({ family: "evm" })], { policy: { canReuseSession } });
+    h.connect.mockResolvedValue({ accounts: [EVM_ADDRESS] });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(h.connect).toHaveBeenCalledTimes(1);
+    expect(out).toEqual({ result: [EVM_ADDRESS] });
+  });
+
+  it("keeps the existing session's id and createdAt when the decision reuses it", async () => {
+    const existing = session({ family: "evm", id: "backend-1", createdAt: 42 });
+    const canReuseSession = vi.fn(async () => false);
+    h = harness([existing], { policy: { canReuseSession } });
+    h.connect.mockResolvedValue({ accounts: [EVM_ADDRESS], reuse: true });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "eth_requestAccounts" });
+
+    expect(out).toEqual({ result: [EVM_ADDRESS] });
+    expect(await h.sessions.get(ORIGIN, "evm")).toMatchObject({
+      id: "backend-1",
+      createdAt: 42,
+      accounts: [EVM_ADDRESS],
+    });
+  });
+});
+
 describe("wallet_switchEthereumChain", () => {
   it("answers 4902 for a chain that is not registered", async () => {
     const out = await h.router.handle({
