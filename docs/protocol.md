@@ -169,6 +169,13 @@ that a wallet is here. `policy.readRpcRequiresSession: false` opts out.
 The host can replace the list or refuse reads entirely. A refused read is
 `unsupported`, not an error.
 
+The call the router makes to the host's node client carries `origin` and
+`session` (the session already looked up for this origin and family, `null`
+when `readRpcRequiresSession` is off and none exists) alongside `method` and
+`params`. `cardano_getBalance`, `cardano_getUtxos` and `cardano_getCollateral`
+send no params of their own, so this is how the host knows which account to
+query.
+
 ### submit — broadcasts a signed transaction
 
 `cardano_submitTx`. Not a read: it spends. It requires a session, it is not
@@ -182,10 +189,15 @@ falls through to the host's node client, still only with a session.
 `cardano_enable`, `tron_requestAccounts`, `xrpl_requestAccounts`,
 `btc_requestAccounts`.
 
-An origin that already has a session is answered immediately. A request carrying
-`{ silent: true }` and no session answers `null` and never opens UI — that is how
-an eager reconnect on page load stays silent. Concurrent connects for one origin
-and family are coalesced into a single prompt.
+An origin that already has a session is answered immediately, unless the host's
+`policy.canReuseSession` says otherwise for that session and request — a host
+that scopes sessions to something the protocol does not model (a workspace, a
+profile) can refuse the silent answer and re-prompt with the existing session
+attached, so its UI can preselect the previous wallet instead of starting over.
+A request carrying `{ silent: true }` and no session answers `null` and never
+opens UI — that is how an eager reconnect on page load stays silent, and it
+takes priority even when `canReuseSession` refused. Concurrent connects for one
+origin and family are coalesced into a single prompt.
 
 Results per family:
 
