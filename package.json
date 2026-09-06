@@ -16,7 +16,8 @@
   "sideEffects": false,
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "CHANGELOG.md"
   ],
   "bin": {
     "inpage-wallet-check": "./bin/inpage-wallet-check.mjs"
