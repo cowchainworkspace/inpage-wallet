@@ -1,6 +1,6 @@
 {
   "name": "inpage-wallet",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": false,
   "description": "Headless, brand-neutral wallet injection and request routing for dApp pages. EIP-6963, Wallet Standard, CIP-30, TronLink, XRPL and BTC providers over a pluggable transport.",
   "license": "MIT",
@@ -15,8 +15,13 @@
   "type": "module",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "bin",
+    "CHANGELOG.md"
   ],
+  "bin": {
+    "inpage-wallet-check": "./bin/inpage-wallet-check.mjs"
+  },
   "keywords": [
     "wallet",
     "eip-1193",
@@ -57,6 +62,10 @@
       "types": "./dist/script/index.d.ts",
       "import": "./dist/script/index.js"
     },
+    "./conformance": {
+      "types": "./dist/conformance/index.d.ts",
+      "import": "./dist/conformance/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -72,10 +81,14 @@
     "prepare": "pnpm run build"
   },
   "peerDependencies": {
-    "tronweb": ">=6"
+    "tronweb": ">=6",
+    "jsdom": ">=20"
   },
   "peerDependenciesMeta": {
     "tronweb": {
+      "optional": true
+    },
+    "jsdom": {
       "optional": true
     }
   },

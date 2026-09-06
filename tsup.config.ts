@@ -18,6 +18,7 @@ export default defineConfig({
     "transports/rn-webview": "src/transports/rn-webview.ts",
     "transports/extension-content-script": "src/transports/extension-content-script.ts",
     "script/index": "src/script/index.ts",
+    "conformance/index": "src/conformance/index.ts",
   },
   format: ["esm"],
   target: "es2022",

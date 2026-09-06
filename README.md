@@ -226,6 +226,34 @@ policy: {
 }
 ```
 
+## Host side
+
+**`policy.canReuseSession`** decides, per connect, whether an existing session
+answers silently or the router opens `ui.connect` again. It is consulted only
+when a session with accounts already exists; `silentReconnect` is the default
+it falls back to when the hook is absent.
+
+```ts
+policy: {
+  // The extension pins a session to the workspace active when it was created;
+  // a connect from a page while a different workspace is active must re-prompt.
+  canReuseSession: (session, req) => session.walletId === activeWorkspaceId(),
+}
+```
+
+Returning `false` does not throw the session away: `ui.connect` receives it as
+`req.existing`, so the confirmation UI can preselect or show the previous
+wallet. If the user picks the same wallet again, resolve with
+`{ accounts, reuse: true }` and the router keeps the existing session — same
+id, same `createdAt`, only `lastUsedAt` bumped — instead of writing a new one.
+A silent reconnect (`{ silent: true }` in the request params) still never opens
+UI, even when the hook returns `false`.
+
+**`RpcRequest`** carries `origin` and `session` (the session the router already
+looked up for that origin and family, or `null`). A CIP-30 per-account read —
+`cardano_getBalance`, `cardano_getUtxos`, `cardano_getCollateral` — sends no
+params of its own, so this is how `rpc` knows which account to query.
+
 ## What this package will never contain
 
 Wallet identity, RPC endpoints, API keys, host URLs, signing code, or key
@@ -236,6 +264,44 @@ material. The package stops at the sign callback.
 `docs/protocol.md` is the wire format as prose, versioned with the package, so a
 host written in Swift or Kotlin can implement the host side without reading
 TypeScript.
+
+## Verifying your own bundles
+
+A host that rebuilds the injected side — bundling the package's chain entries
+into its own standalone files, the way a browser extension does for Firefox or
+Safari — can prove the result still speaks the protocol with
+`inpage-wallet/conformance`:
+
+```ts
+import { checkInpageBundle } from "inpage-wallet/conformance";
+import { JSDOM } from "jsdom";
+
+const dom = new JSDOM("", { url: "https://example.test", runScripts: "dangerously" });
+const report = await checkInpageBundle(
+  await readFile("dist/evm.iife.js", "utf8"),
+  { identity: IDENTITY, families: ["evm"] },
+  { window: dom.window },
+);
+// report.ok, report.checks: [{ name, family?, ok, detail? }]
+```
+
+It evaluates the built source in the window you supply — jsdom, happy-dom, or a
+real browser — and checks discovery, the `ready` handshake, one request
+round-trip and one event per family, and that evaluating the same source twice
+does not install anything a second time. It throws only when the source itself
+is broken; every other problem comes back as a failing check, never a throw.
+
+The package adds no dependency for this: bring your own DOM. The bundled CLI
+does the same thing from the command line, importing `jsdom` from your own
+project (`pnpm add -D jsdom`) if it isn't already a dependency:
+
+```sh
+npx inpage-wallet-check dist/evm.iife.js \
+  --name "Example Wallet" --rdns com.example.wallet --uuid <uuid> \
+  --families evm,solana [--channel c] [--cardano-key k]
+```
+
+It prints the report and exits `1` when any check fails.
 
 ## Development
 

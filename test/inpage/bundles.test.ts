@@ -2,8 +2,9 @@
  * @vitest-environment jsdom
  *
  * The other inpage tests exercise the TypeScript factories. This one runs what a
- * page actually gets — the built IIFE from dist — so a bundling regression in one
- * chain cannot pass unnoticed.
+ * page actually gets — the built IIFE from dist — through the conformance tool
+ * itself, so a bundling regression in one chain cannot pass unnoticed and the
+ * tool is exercised by the package's own suite.
  */
 import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
@@ -11,45 +12,31 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { availableBundles, buildPreamble } from "../../src/script/build";
-import { configFor, IDENTITY } from "./fake-transport";
+import { checkInpageBundle, type ConformanceReport } from "../../src/conformance/index";
+import { availableBundles } from "../../src/script/build";
+import type { ChainFamily } from "../../src/protocol/networks";
+import { IDENTITY } from "./fake-transport";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const distDir = resolve(root, "dist/inpage");
 
-/** Every bundle, with the family whose networks make it install. */
-const BUNDLES = [
-  { name: "btc", family: "btc" },
-  { name: "cardano", family: "cardano" },
-  { name: "evm", family: "evm" },
-  { name: "solana", family: "solana" },
-  { name: "tron", family: "tron" },
-  { name: "xrp", family: "xrp" },
-  { name: "xrp-standard", family: "xrp" },
-] as const;
+/** Every generated bundle file, so a missing one still triggers the build below. */
+const BUNDLE_FILES = ["btc", "cardano", "evm", "solana", "tron", "xrp", "xrp-standard"] as const;
 
-type TestWindow = Window &
-  typeof globalThis & {
-    ReactNativeWebView?: { postMessage(data: string): void };
-    cardano?: Record<string, unknown>;
-    tronLink?: unknown;
-    crossmark?: unknown;
-  };
-
-type Announced = { info: { rdns: string } };
-type Registered = { name: string };
-
-type Page = {
-  win: TestWindow;
-  posted: string[];
-  announced: Announced[];
-  registered: Registered[];
+/** Files that make up each family's injected surface. XRP ships two. */
+const BUNDLE_FILES_FOR: Record<ChainFamily, readonly string[]> = {
+  evm: ["evm"],
+  solana: ["solana"],
+  cardano: ["cardano"],
+  tron: ["tron"],
+  xrp: ["xrp", "xrp-standard"],
+  btc: ["btc"],
 };
 
 async function missingBundles(): Promise<boolean> {
-  for (const { name } of BUNDLES) {
+  for (const name of BUNDLE_FILES) {
     try {
       await stat(resolve(distDir, `${name}.iife.js`));
     } catch {
@@ -59,74 +46,57 @@ async function missingBundles(): Promise<boolean> {
   return false;
 }
 
-beforeAll(async () => {
+async function buildBundlesIfMissing(): Promise<void> {
   if (!(await missingBundles())) return;
   await promisify(execFile)(
     process.execPath,
     [resolve(root, "scripts/bundle-inpage.mjs"), "--force"],
     { cwd: root },
   );
-}, 180_000);
+}
+
+async function sourceFor(family: ChainFamily): Promise<string> {
+  const files = await Promise.all(
+    BUNDLE_FILES_FOR[family].map((name) => readFile(resolve(distDir, `${name}.iife.js`), "utf8")),
+  );
+  return files.join("\n");
+}
 
 /** An iframe is the cheapest fresh window: no leftover provider, no leftover flag. */
-function load(family: (typeof BUNDLES)[number]["family"], iife: string): Page {
+function freshWindow(): Window & typeof globalThis {
   const frame = document.createElement("iframe");
   document.body.appendChild(frame);
-  const win = frame.contentWindow as TestWindow | null;
+  const win = frame.contentWindow as (Window & typeof globalThis) | null;
   if (!win) throw new Error("the iframe has no window");
+  return win;
+}
 
-  const posted: string[] = [];
-  const announced: Announced[] = [];
-  const registered: Registered[] = [];
-
-  win.ReactNativeWebView = {
-    postMessage: (data) => {
-      posted.push(data);
-    },
-  };
-  win.addEventListener("eip6963:announceProvider", (event) => {
-    announced.push((event as CustomEvent<Announced>).detail);
-  });
-  win.addEventListener("wallet-standard:register-wallet", (event) => {
-    const detail = (event as unknown as { detail: (api: { register(w: unknown): void }) => void })
-      .detail;
-    detail({ register: (wallet) => registered.push(wallet as Registered) });
-  });
-
-  win.eval(buildPreamble(configFor([family])));
-  win.eval(iife);
-  return { win, posted, announced, registered };
+function explain(report: ConformanceReport): string {
+  return report.checks
+    .filter((c) => !c.ok)
+    .map((c) => `${c.family ?? "-"} ${c.name}${c.detail ? `: ${c.detail}` : ""}`)
+    .join("\n");
 }
 
 describe("built chain bundles", () => {
-  it("fires each family's discovery hook in a fresh page", async () => {
-    expect(availableBundles()).toEqual(BUNDLES.map((b) => b.name));
-
-    for (const bundle of BUNDLES) {
-      const iife = await readFile(resolve(distDir, `${bundle.name}.iife.js`), "utf8");
-      const page = load(bundle.family, iife);
-
-      switch (bundle.name) {
-        case "evm":
-          expect(page.announced.map((a) => a.info.rdns)).toEqual([IDENTITY.rdns]);
-          break;
-        case "solana":
-        case "btc":
-        case "xrp-standard":
-          expect(page.registered.map((w) => w.name)).toEqual([IDENTITY.name]);
-          break;
-        case "cardano":
-          expect(Object.keys(page.win.cardano ?? {})).toHaveLength(1);
-          break;
-        case "tron":
-          expect(page.win.tronLink).toBeDefined();
-          break;
-        case "xrp":
-          expect(page.win.crossmark).toBeDefined();
-          break;
-      }
-
-      expect(page.posted).toHaveLength(1);
-    }
+  it("lists a bundle for every family", async () => {
+    await buildBundlesIfMissing();
+    expect(availableBundles()).toEqual([...BUNDLE_FILES].sort());
   });
+
+  it.each(Object.keys(BUNDLE_FILES_FOR) as ChainFamily[])(
+    "passes conformance for %s",
+    async (family) => {
+      await buildBundlesIfMissing();
+      const source = await sourceFor(family);
+
+      const report = await checkInpageBundle(
+        source,
+        { identity: IDENTITY, families: [family] },
+        { window: freshWindow() },
+      );
+
+      expect(report.ok, explain(report)).toBe(true);
+    },
+  );
 });
