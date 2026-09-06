@@ -249,6 +249,11 @@ id, same `createdAt`, only `lastUsedAt` bumped — instead of writing a new one.
 A silent reconnect (`{ silent: true }` in the request params) still never opens
 UI, even when the hook returns `false`.
 
+**`RpcRequest`** carries `origin` and `session` (the session the router already
+looked up for that origin and family, or `null`). A CIP-30 per-account read —
+`cardano_getBalance`, `cardano_getUtxos`, `cardano_getCollateral` — sends no
+params of its own, so this is how `rpc` knows which account to query.
+
 ## What this package will never contain
 
 Wallet identity, RPC endpoints, API keys, host URLs, signing code, or key

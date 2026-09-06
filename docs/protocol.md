@@ -169,6 +169,13 @@ that a wallet is here. `policy.readRpcRequiresSession: false` opts out.
 The host can replace the list or refuse reads entirely. A refused read is
 `unsupported`, not an error.
 
+The call the router makes to the host's node client carries `origin` and
+`session` (the session already looked up for this origin and family, `null`
+when `readRpcRequiresSession` is off and none exists) alongside `method` and
+`params`. `cardano_getBalance`, `cardano_getUtxos` and `cardano_getCollateral`
+send no params of their own, so this is how the host knows which account to
+query.
+
 ### submit — broadcasts a signed transaction
 
 `cardano_submitTx`. Not a read: it spends. It requires a session, it is not

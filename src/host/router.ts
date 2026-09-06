@@ -162,6 +162,9 @@ export type RpcRequest = {
   chainId: string | null;
   method: string;
   params: unknown[];
+  origin: string;
+  /** The session for this origin and family, or null when the read needed none. */
+  session: Session | null;
 };
 
 export type RpcClient = (req: RpcRequest) => Promise<unknown>;
@@ -390,6 +393,8 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     network: NetworkDef,
     method: string,
     params: unknown[],
+    origin: string,
+    session: Session | null,
   ): Promise<RouterOutcome> {
     const rpc = deps.rpc;
     if (!rpc) return { error: unsupportedMethod(method) };
@@ -401,6 +406,8 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
           chainId: network.wire.evmChainId ?? null,
           method,
           params,
+          origin,
+          session,
         }),
       };
     } catch (error) {
@@ -868,7 +875,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
         }
         const network = networkOf(req.origin, session, family);
         if (!network) return { error: unsupportedMethod(req.method) };
-        return callRpc(family, network, req.method, params);
+        return callRpc(family, network, req.method, params, req.origin, session);
       }
       case "submit": {
         const session = await deps.sessions.get(req.origin, family);
@@ -891,7 +898,7 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
           return { result };
         }
         if (!deps.rpc || !network) return { error: unsupportedMethod(req.method) };
-        return callRpc(family, network, req.method, params);
+        return callRpc(family, network, req.method, params, req.origin, session);
       }
       case "connect":
         return connect(req.origin, family, req.method, params, controller);

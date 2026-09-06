@@ -156,6 +156,8 @@ describe("read RPC passthrough", () => {
       chainId: "0x1",
       method: "eth_getBalance",
       params: [EVM_ADDRESS, "latest"],
+      origin: ORIGIN,
+      session: await h.sessions.get(ORIGIN, "evm"),
     });
     expect(out).toEqual({ result: "0x2a" });
   });
@@ -216,6 +218,7 @@ describe("read RPC passthrough", () => {
     expect(await h.router.handle({ origin: ORIGIN, method: "eth_blockNumber" })).toEqual({
       result: "0x2a",
     });
+    expect(h.rpc).toHaveBeenCalledWith(expect.objectContaining({ origin: ORIGIN, session: null }));
   });
 
   it("is unsupported when the host wired no rpc client", async () => {
