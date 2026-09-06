@@ -4,6 +4,14 @@
   "private": false,
   "description": "Headless, brand-neutral wallet injection and request routing for dApp pages. EIP-6963, Wallet Standard, CIP-30, TronLink, XRPL and BTC providers over a pluggable transport.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cowchainworkspace/inpage-wallet.git"
+  },
+  "homepage": "https://github.com/cowchainworkspace/inpage-wallet#readme",
+  "bugs": {
+    "url": "https://github.com/cowchainworkspace/inpage-wallet/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "files": [
