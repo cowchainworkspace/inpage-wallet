@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { createInjectedWallet } from "../../src/inpage";
 import { resetInstalls } from "../../src/inpage/core/guard";
@@ -93,7 +93,8 @@ describe("Bitcoin injection", () => {
       { psbt: new Uint8Array([116, 104, 114, 101, 101]) },
     );
     for (const [index, signed] of ["a", "b", "c"].entries()) {
-      await vi.waitFor(() => expect(transport.requests()).toHaveLength(index + 1));
+      await new Promise<void>((resolve) => void setTimeout(resolve, 0));
+      expect(transport.requests()).toHaveLength(index + 1);
       transport.respond(btoa(signed));
     }
 

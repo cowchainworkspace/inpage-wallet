@@ -29,13 +29,17 @@ function register(): StandardWallet[] {
   return wallets;
 }
 
+/** Drains the microtask queue the awaited requests are resolved through. */
+const flush = (): Promise<void> => new Promise((resolve) => void setTimeout(resolve, 0));
+
 /**
  * A variadic sign asks for one signature at a time, so each answer is what
  * releases the next request.
  */
 async function respondEach(transport: FakeTransport, results: unknown[]): Promise<void> {
   for (const [index, result] of results.entries()) {
-    await vi.waitFor(() => expect(transport.requests()).toHaveLength(index + 1));
+    await flush();
+    expect(transport.requests()).toHaveLength(index + 1);
     transport.respond(result);
   }
 }
@@ -178,7 +182,8 @@ describe("Solana injection", () => {
       { transaction: new Uint8Array([1]), account: { address: ADDRESS } },
       { transaction: new Uint8Array([2]), account: { address: ADDRESS } },
     );
-    await vi.waitFor(() => expect(transport.requests()).toHaveLength(1));
+    await flush();
+    expect(transport.requests()).toHaveLength(1);
     transport.fail({ code: 4001, message: "User rejected the request" });
 
     await expect(pending).rejects.toMatchObject({ code: 4001 });
