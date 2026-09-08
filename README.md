@@ -24,6 +24,13 @@ pnpm add inpage-wallet
 Node 24, pnpm 10. `tronweb` is an optional peer dependency, needed only by the
 `inpage/tron-full` entry.
 
+The package ships ESM and CommonJS side by side, so every subpath resolves under
+both `import` and `require`. **Jest needs no configuration for it** — no
+`moduleNameMapper` pointing into `dist`, and no
+`testEnvironmentOptions.customExportConditions`, which would change resolution
+for every other package in the suite. `sideEffects: false` still holds, so
+bundlers tree-shake the ESM build as before.
+
 ## Quickstart: browser extension
 
 Three contexts, three files. See `examples/extension-minimal` for the whole thing.
@@ -128,6 +135,29 @@ before `transport.commit` is called. `commit` is also what binds delivery: a
 response for an origin the WebView is no longer showing is never injected, and a
 delivery script built for a previous document is ignored by the page. See
 `examples/rn-webview` for the whole loop.
+
+**A dropped message is not a slow one.** `createRnHostTransport` takes an
+optional `onDrop(reason, detail)` — `"no-commit"`, `"nonce-mismatch"`,
+`"origin-mismatch"`, `"oversized"` or `"malformed"`, with `{ origin?, size? }`
+and never the nonce — called for every envelope it refuses, in both directions.
+Without it, and outside `NODE_ENV === "production"`, the transport warns once
+per reason per committed document instead, so a page that has gone mute is
+visible rather than looking slow.
+
+```ts
+const transport = createRnHostTransport({
+  inject: (s) => ref.current?.injectJavaScript(s),
+  onDrop: (reason, detail) => log.warn("wallet bridge dropped a message", reason, detail),
+});
+```
+
+**A new nonce needs a new document.** The nonce belongs to the document that was
+injected with it, so minting one without reloading the WebView strands the page:
+every envelope it posts is dropped as `nonce-mismatch`, and every response is
+built for a nonce the page does not hold. React Fast Refresh is where this bites
+in development — remounting the component that owns the nonce keeps the loaded
+page — so rebuild the injected script and reload the WebView together, or keep
+the nonce out of the remounted state.
 
 ## Identity
 
@@ -248,6 +278,24 @@ wallet. If the user picks the same wallet again, resolve with
 id, same `createdAt`, only `lastUsedAt` bumped — instead of writing a new one.
 A silent reconnect (`{ silent: true }` in the request params) still never opens
 UI, even when the hook returns `false`.
+
+**Solana and BTC connects must bring a public key.** `ui.connect` resolves with
+a `ConnectDecision`; for `family: "solana"` and `family: "btc"` the page builds
+transactions from `account.publicKey`, so `publicKey: number[]` is required
+there. `ConnectDecisionFor<"solana">` is the decision type for one family, and
+the router rejects a decision without a non-empty key with `-32603`
+("Wallet did not provide a public key for solana") before it writes a session —
+rather than announcing a zero-length key, which surfaces much later as
+`unknown signer` from `@solana/web3.js`, naming the wrong key.
+
+```ts
+async function connect(req: ConnectRequest): Promise<ConnectDecision | null> {
+  const account = await pick(req);
+  return req.family === "solana" || req.family === "btc"
+    ? { accounts: [account.address], publicKey: [...account.publicKey] }
+    : { accounts: [account.address] };
+}
+```
 
 **`RpcRequest`** carries `origin` and `session` (the session the router already
 looked up for that origin and family, or `null`). A CIP-30 per-account read —

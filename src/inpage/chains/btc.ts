@@ -4,6 +4,7 @@ import type { InjectedConfig } from "../core/config";
 import { claimInstall } from "../core/guard";
 import {
   bytes,
+  inOrder,
   registerWallet,
   STANDARD_EVENTS,
   type ChangeListener,
@@ -59,7 +60,7 @@ export function installBtc(bridge: Bridge, config: InjectedConfig): void {
 
   const makeAccount = (r: {
     address: string;
-    publicKey?: number[];
+    publicKey: number[];
     addressType?: string;
   }): BtcAccount => ({
     address: r.address,
@@ -98,27 +99,35 @@ export function installBtc(bridge: Bridge, config: InjectedConfig): void {
             publicKey?: number[];
             addressType?: string;
           } | null;
-          accounts = res ? [makeAccount(res)] : [];
+          // A zero-length key would have the dApp build transactions for an
+          // account the wallet does not hold; a connect without one has failed.
+          const publicKey = res?.publicKey;
+          if (res && !(publicKey && publicKey.length > 0)) {
+            throw new Error("Wallet did not provide a public key for btc");
+          }
+          accounts = res && publicKey ? [makeAccount({ ...res, publicKey })] : [];
           emitChange();
           return { accounts };
         },
       },
       [SIGN_MESSAGE]: {
         version: "1.0.0" as const,
-        signMessage: async (input: { message: Uint8Array }) => {
-          const message = new TextDecoder().decode(input.message);
-          const signature = (await bridge.request("btc_signMessage", [{ message }])) as string;
-          return [{ signature: b64ToBytes(signature) }];
-        },
+        signMessage: (...inputs: { message: Uint8Array }[]) =>
+          inOrder(inputs, async (input) => {
+            const message = new TextDecoder().decode(input.message);
+            const signature = (await bridge.request("btc_signMessage", [{ message }])) as string;
+            return { signature: b64ToBytes(signature) };
+          }),
       },
       [SIGN_TX]: {
         version: "1.0.0" as const,
-        signTransaction: async (input: { psbt: Uint8Array }) => {
-          const signed = (await bridge.request("btc_signPsbt", [
-            { psbt: bytesToB64(input.psbt) },
-          ])) as string;
-          return [{ signedPsbt: b64ToBytes(signed) }];
-        },
+        signTransaction: (...inputs: { psbt: Uint8Array }[]) =>
+          inOrder(inputs, async (input) => {
+            const signed = (await bridge.request("btc_signPsbt", [
+              { psbt: bytesToB64(input.psbt) },
+            ])) as string;
+            return { signedPsbt: b64ToBytes(signed) };
+          }),
       },
     },
   };
