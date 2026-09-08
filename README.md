@@ -129,6 +129,29 @@ response for an origin the WebView is no longer showing is never injected, and a
 delivery script built for a previous document is ignored by the page. See
 `examples/rn-webview` for the whole loop.
 
+**A dropped message is not a slow one.** `createRnHostTransport` takes an
+optional `onDrop(reason, detail)` — `"no-commit"`, `"nonce-mismatch"`,
+`"origin-mismatch"`, `"oversized"` or `"malformed"`, with `{ origin?, size? }`
+and never the nonce — called for every envelope it refuses, in both directions.
+Without it, and outside `NODE_ENV === "production"`, the transport warns once
+per reason per committed document instead, so a page that has gone mute is
+visible rather than looking slow.
+
+```ts
+const transport = createRnHostTransport({
+  inject: (s) => ref.current?.injectJavaScript(s),
+  onDrop: (reason, detail) => log.warn("wallet bridge dropped a message", reason, detail),
+});
+```
+
+**A new nonce needs a new document.** The nonce belongs to the document that was
+injected with it, so minting one without reloading the WebView strands the page:
+every envelope it posts is dropped as `nonce-mismatch`, and every response is
+built for a nonce the page does not hold. React Fast Refresh is where this bites
+in development — remounting the component that owns the nonce keeps the loaded
+page — so rebuild the injected script and reload the WebView together, or keep
+the nonce out of the remounted state.
+
 ## Identity
 
 ```ts
