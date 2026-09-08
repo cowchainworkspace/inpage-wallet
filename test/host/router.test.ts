@@ -984,6 +984,45 @@ describe("solana", () => {
     expect(out).toEqual({ result: { address: SOL_ADDRESS, publicKey: [1, 2, 3] } });
   });
 
+  it("rejects a decision with no public key and writes no session", async () => {
+    h.connect.mockResolvedValue({ accounts: [SOL_ADDRESS] });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "solana_connect",
+      params: [{ silent: false }],
+    });
+
+    expect(out).toEqual({
+      error: { code: -32603, message: "Wallet did not provide a public key for solana" },
+    });
+    expect(await h.sessions.get(ORIGIN, "solana")).toBeNull();
+    expect(h.events).toEqual([]);
+  });
+
+  it("rejects a decision whose public key is empty", async () => {
+    h.connect.mockResolvedValue({ accounts: [SOL_ADDRESS], publicKey: [] });
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "solana_connect",
+      params: [{ silent: false }],
+    });
+
+    expect(out).toMatchObject({ error: { code: -32603 } });
+    expect(await h.sessions.get(ORIGIN, "solana")).toBeNull();
+  });
+
+  it("refuses to answer a reconnect from a session that carries no public key", async () => {
+    h = harness([session({ family: "solana" })]);
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "solana_connect" });
+
+    expect(out).toEqual({
+      error: { code: -32603, message: "Wallet did not provide a public key for solana" },
+    });
+  });
+
   it("clears the session and emits an empty account list on disconnect", async () => {
     h = harness([session({ family: "solana" })]);
 
@@ -994,6 +1033,34 @@ describe("solana", () => {
     expect(h.events).toEqual([
       { origin: ORIGIN, event: { family: "solana", event: "accountsChanged", data: [] } },
     ]);
+  });
+});
+
+describe("btc connect", () => {
+  const BTC_ADDRESS = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
+  const BTC_NETWORKS = [...NETWORKS, { id: "btc_main", family: "btc", name: "Bitcoin", wire: {} } as NetworkDef];
+
+  it("rejects a decision with no public key and writes no session", async () => {
+    h = harness([], { networks: BTC_NETWORKS });
+    h.connect.mockResolvedValue({ accounts: [BTC_ADDRESS], addressType: "p2wpkh" });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "btc_requestAccounts" });
+
+    expect(out).toEqual({
+      error: { code: -32603, message: "Wallet did not provide a public key for btc" },
+    });
+    expect(await h.sessions.get(ORIGIN, "btc")).toBeNull();
+  });
+
+  it("connects when the decision brings a key", async () => {
+    h = harness([], { networks: BTC_NETWORKS });
+    h.connect.mockResolvedValue({ accounts: [BTC_ADDRESS], publicKey: [2, 3], addressType: "p2wpkh" });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "btc_requestAccounts" });
+
+    expect(out).toEqual({
+      result: { address: BTC_ADDRESS, publicKey: [2, 3], addressType: "p2wpkh" },
+    });
   });
 });
 

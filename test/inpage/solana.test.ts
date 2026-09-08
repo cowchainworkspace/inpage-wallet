@@ -248,13 +248,35 @@ describe("Solana injection", () => {
     events.on("change", onChange);
 
     const pending = connect.connect();
-    transport.respond({ address: ADDRESS, publicKey: [] });
+    transport.respond({ address: ADDRESS, publicKey: [1, 2, 3] });
     await pending;
 
     transport.deliver({ kind: "event", family: "solana", event: "accountsChanged", data: [] });
 
     expect(wallet.accounts).toEqual([]);
     expect(onChange).toHaveBeenLastCalledWith({ accounts: [] });
+  });
+
+  it("fails the connect when the host returns no public key", async () => {
+    const { wallet, transport } = install();
+    const connect = wallet.features["standard:connect"] as { connect(): Promise<unknown> };
+
+    const pending = connect.connect();
+    transport.respond({ address: ADDRESS });
+
+    await expect(pending).rejects.toThrow(/public key/i);
+    expect(wallet.accounts).toEqual([]);
+  });
+
+  it("fails the connect when the host returns a zero-length public key", async () => {
+    const { wallet, transport } = install();
+    const connect = wallet.features["standard:connect"] as { connect(): Promise<unknown> };
+
+    const pending = connect.connect();
+    transport.respond({ address: ADDRESS, publicKey: [] });
+
+    await expect(pending).rejects.toThrow(/public key/i);
+    expect(wallet.accounts).toEqual([]);
   });
 
   it("is a no-op on a second injection", () => {

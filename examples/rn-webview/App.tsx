@@ -40,6 +40,12 @@ const NETWORKS: NetworkDef[] = [
   },
 ];
 
+// Your signer owns these in a real app; the package never sees key material.
+const SOL_ACCOUNT = {
+  address: "So11111111111111111111111111111111111111112",
+  publicKey: Array.from({ length: 32 }, (_, i) => i),
+};
+
 // MMKV or AsyncStorage in a real app; the store only needs these four calls.
 const cache = new Map<string, Session>();
 const local: LocalSessionCache = {
@@ -117,7 +123,12 @@ export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
         ui: {
           connect: async (req): Promise<ConnectDecision | null> => {
             const ok = await ask("Connect", `${req.origin} wants to connect (${req.family}).`);
-            return ok ? { accounts: ["0x0000000000000000000000000000000000000001"] } : null;
+            if (!ok) return null;
+            // Solana and BTC hand the key to the page; the router refuses a
+            // decision without one rather than announcing an empty key.
+            return req.family === "solana"
+              ? { accounts: [SOL_ACCOUNT.address], publicKey: SOL_ACCOUNT.publicKey }
+              : { accounts: ["0x0000000000000000000000000000000000000001"] };
           },
           sign: async (req): Promise<unknown> => {
             const ok = await ask("Confirm", `${req.origin}\n\n${describe(req)}`);

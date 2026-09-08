@@ -199,6 +199,12 @@ opens UI — that is how an eager reconnect on page load stays silent, and it
 takes priority even when `canReuseSession` refused. Concurrent connects for one
 origin and family are coalesced into a single prompt.
 
+**A `solana` or `btc` connect answers with a public key or it fails.** The page
+builds transactions from it, so a host that grants an account without one is
+answered `-32603` ("Wallet did not provide a public key for <family>") and no
+session is written; the page treats a connect result with no key, or a
+zero-length one, as a failed connect rather than announcing an empty account.
+
 Results per family:
 
 | family    | result |

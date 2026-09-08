@@ -127,11 +127,22 @@ describe("Bitcoin injection", () => {
     const { wallet, transport } = install();
     const feature = wallet.features["bitcoin:connect"] as { connect(): Promise<unknown> };
     const pending = feature.connect();
-    transport.respond({ address: ADDRESS });
+    transport.respond({ address: ADDRESS, publicKey: [2, 3] });
     await pending;
 
     transport.deliver({ kind: "event", family: "btc", event: "accountsChanged", data: [] });
 
+    expect(wallet.accounts).toEqual([]);
+  });
+
+  it("fails the connect when the host returns no public key", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["bitcoin:connect"] as { connect(): Promise<unknown> };
+
+    const pending = feature.connect();
+    transport.respond({ address: ADDRESS, addressType: "p2wpkh" });
+
+    await expect(pending).rejects.toThrow(/public key/i);
     expect(wallet.accounts).toEqual([]);
   });
 

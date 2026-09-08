@@ -67,8 +67,14 @@ export function installSolana(bridge: Bridge, config: InjectedConfig): void {
         connect: async (input?: { silent?: boolean }) => {
           const res = (await bridge.request("solana_connect", [
             { silent: Boolean(input?.silent) },
-          ])) as { address: string; publicKey: number[] } | null;
-          accounts = res ? [makeAccount(res)] : [];
+          ])) as { address: string; publicKey?: number[] } | null;
+          // A zero-length key would have the dApp build transactions for an
+          // account the wallet does not hold; a connect without one has failed.
+          const publicKey = res?.publicKey;
+          if (res && !(publicKey && publicKey.length > 0)) {
+            throw new Error("Wallet did not provide a public key for solana");
+          }
+          accounts = res && publicKey ? [makeAccount({ address: res.address, publicKey })] : [];
           emitChange();
           return { accounts };
         },

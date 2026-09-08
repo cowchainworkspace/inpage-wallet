@@ -249,6 +249,24 @@ id, same `createdAt`, only `lastUsedAt` bumped — instead of writing a new one.
 A silent reconnect (`{ silent: true }` in the request params) still never opens
 UI, even when the hook returns `false`.
 
+**Solana and BTC connects must bring a public key.** `ui.connect` resolves with
+a `ConnectDecision`; for `family: "solana"` and `family: "btc"` the page builds
+transactions from `account.publicKey`, so `publicKey: number[]` is required
+there. `ConnectDecisionFor<"solana">` is the decision type for one family, and
+the router rejects a decision without a non-empty key with `-32603`
+("Wallet did not provide a public key for solana") before it writes a session —
+rather than announcing a zero-length key, which surfaces much later as
+`unknown signer` from `@solana/web3.js`, naming the wrong key.
+
+```ts
+async function connect(req: ConnectRequest): Promise<ConnectDecision | null> {
+  const account = await pick(req);
+  return req.family === "solana" || req.family === "btc"
+    ? { accounts: [account.address], publicKey: [...account.publicKey] }
+    : { accounts: [account.address] };
+}
+```
+
 **`RpcRequest`** carries `origin` and `session` (the session the router already
 looked up for that origin and family, or `null`). A CIP-30 per-account read —
 `cardano_getBalance`, `cardano_getUtxos`, `cardano_getCollateral` — sends no

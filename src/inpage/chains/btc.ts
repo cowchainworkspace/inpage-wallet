@@ -60,7 +60,7 @@ export function installBtc(bridge: Bridge, config: InjectedConfig): void {
 
   const makeAccount = (r: {
     address: string;
-    publicKey?: number[];
+    publicKey: number[];
     addressType?: string;
   }): BtcAccount => ({
     address: r.address,
@@ -99,7 +99,13 @@ export function installBtc(bridge: Bridge, config: InjectedConfig): void {
             publicKey?: number[];
             addressType?: string;
           } | null;
-          accounts = res ? [makeAccount(res)] : [];
+          // A zero-length key would have the dApp build transactions for an
+          // account the wallet does not hold; a connect without one has failed.
+          const publicKey = res?.publicKey;
+          if (res && !(publicKey && publicKey.length > 0)) {
+            throw new Error("Wallet did not provide a public key for btc");
+          }
+          accounts = res && publicKey ? [makeAccount({ ...res, publicKey })] : [];
           emitChange();
           return { accounts };
         },

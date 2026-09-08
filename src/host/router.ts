@@ -23,9 +23,10 @@ import { withTimeout, type Cancellable } from "./timeout";
 
 export type RouterOutcome = { result: unknown } | { error: RpcError };
 
-export type ConnectRequest = {
+/** Narrow `F` to write a handler for one family: `ConnectRequest<"solana">`. */
+export type ConnectRequest<F extends ChainFamily = ChainFamily> = {
   origin: string;
-  family: ChainFamily;
+  family: F;
   method: string;
   /** The network that will back the session unless the decision names another. */
   network: NetworkDef | null;
@@ -36,18 +37,40 @@ export type ConnectRequest = {
   signal: AbortSignal;
 };
 
-export type ConnectDecision = {
+type ConnectDecisionBase = {
   accounts: string[];
   /** A NetworkDef.id; the family default when omitted. */
   networkId?: string | undefined;
   walletId?: string | undefined;
-  /** Account public key bytes, JSON-safe. Solana and BTC surface it to the page. */
-  publicKey?: number[] | undefined;
   /** BTC only, e.g. "p2wpkh". */
   addressType?: string | undefined;
   /** With `ConnectRequest.existing` present, keep that session instead of writing a new one. */
   reuse?: boolean | undefined;
 };
+
+/** The families whose page-side account carries a public key. */
+export type KeyedFamily = "solana" | "btc";
+
+/**
+ * Solana and BTC hand the key to the page, which builds transactions from it: a
+ * decision without one is rejected rather than announced as a zero-length key.
+ */
+export type KeyedConnectDecision = ConnectDecisionBase & {
+  /** Account public key bytes, JSON-safe. */
+  publicKey: number[];
+};
+
+export type PlainConnectDecision = ConnectDecisionBase & {
+  /** Account public key bytes, JSON-safe. Ignored outside Solana and BTC. */
+  publicKey?: number[] | undefined;
+};
+
+/** What `ui.connect` must resolve with for `req.family`. */
+export type ConnectDecisionFor<F extends ChainFamily> = F extends KeyedFamily
+  ? KeyedConnectDecision
+  : PlainConnectDecision;
+
+export type ConnectDecision = KeyedConnectDecision | PlainConnectDecision;
 
 export type SwitchChainRequest = {
   origin: string;
@@ -475,6 +498,17 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     }
   }
 
+  /**
+   * A page that receives a zero-length key builds transactions for an account the
+   * wallet does not hold, and only finds out at signing, in an error that names
+   * the wrong key. Fail at connect instead, before a session is written.
+   */
+  function missingPublicKey(family: ChainFamily, publicKey: number[] | undefined): RpcError | null {
+    if (family !== "solana" && family !== "btc") return null;
+    if (publicKey && publicKey.length > 0) return null;
+    return rpcError(RPC_INTERNAL, `Wallet did not provide a public key for ${family}`);
+  }
+
   async function reuseExisting(
     session: Session,
     req: { origin: string; family: ChainFamily; method: string; raw: unknown[] },
@@ -499,6 +533,8 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     if (existing && existing.accounts.length > 0) {
       const reuse = await reuseExisting(existing, { origin, family, method, raw: params });
       if (reuse) {
+        const missing = missingPublicKey(family, existing.publicKey);
+        if (missing) return { error: missing };
         return { result: connectResult(family, existing, networkOf(origin, existing, family)) };
       }
     }
@@ -522,6 +558,11 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     // A decision that arrives after the request was cancelled changes nothing.
     if (controller.signal.aborted) return { error: userRejected() };
     if (!decision || decision.accounts.length === 0) return { error: userRejected() };
+
+    // A reuse keeps the existing session's key; anything else must bring its own.
+    const reused = decision.reuse ? existing : null;
+    const missing = missingPublicKey(family, reused ? reused.publicKey : decision.publicKey);
+    if (missing) return { error: missing };
 
     if (decision.reuse && existing) {
       const kept: Session = { ...existing, lastUsedAt: Date.now() };
