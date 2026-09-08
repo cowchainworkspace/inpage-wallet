@@ -1,6 +1,6 @@
 {
   "name": "inpage-wallet",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": false,
   "description": "Headless, brand-neutral wallet injection and request routing for dApp pages. EIP-6963, Wallet Standard, CIP-30, TronLink, XRPL and BTC providers over a pluggable transport.",
   "license": "MIT",
@@ -35,36 +35,84 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./protocol": {
-      "types": "./dist/protocol/index.d.ts",
-      "import": "./dist/protocol/index.js"
+      "import": {
+        "types": "./dist/protocol/index.d.ts",
+        "default": "./dist/protocol/index.js"
+      },
+      "require": {
+        "types": "./dist/protocol/index.d.cts",
+        "default": "./dist/protocol/index.cjs"
+      }
     },
     "./host": {
-      "types": "./dist/host/index.d.ts",
-      "import": "./dist/host/index.js"
+      "import": {
+        "types": "./dist/host/index.d.ts",
+        "default": "./dist/host/index.js"
+      },
+      "require": {
+        "types": "./dist/host/index.d.cts",
+        "default": "./dist/host/index.cjs"
+      }
     },
     "./inpage": {
-      "types": "./dist/inpage/index.d.ts",
-      "import": "./dist/inpage/index.js"
+      "import": {
+        "types": "./dist/inpage/index.d.ts",
+        "default": "./dist/inpage/index.js"
+      },
+      "require": {
+        "types": "./dist/inpage/index.d.cts",
+        "default": "./dist/inpage/index.cjs"
+      }
     },
     "./inpage/*": {
-      "types": "./dist/inpage/chains/*.d.ts",
-      "import": "./dist/inpage/chains/*.js"
+      "import": {
+        "types": "./dist/inpage/chains/*.d.ts",
+        "default": "./dist/inpage/chains/*.js"
+      },
+      "require": {
+        "types": "./dist/inpage/chains/*.d.cts",
+        "default": "./dist/inpage/chains/*.cjs"
+      }
     },
     "./transports/*": {
-      "types": "./dist/transports/*.d.ts",
-      "import": "./dist/transports/*.js"
+      "import": {
+        "types": "./dist/transports/*.d.ts",
+        "default": "./dist/transports/*.js"
+      },
+      "require": {
+        "types": "./dist/transports/*.d.cts",
+        "default": "./dist/transports/*.cjs"
+      }
     },
     "./script": {
-      "types": "./dist/script/index.d.ts",
-      "import": "./dist/script/index.js"
+      "import": {
+        "types": "./dist/script/index.d.ts",
+        "default": "./dist/script/index.js"
+      },
+      "require": {
+        "types": "./dist/script/index.d.cts",
+        "default": "./dist/script/index.cjs"
+      }
     },
     "./conformance": {
-      "types": "./dist/conformance/index.d.ts",
-      "import": "./dist/conformance/index.js"
+      "import": {
+        "types": "./dist/conformance/index.d.ts",
+        "default": "./dist/conformance/index.js"
+      },
+      "require": {
+        "types": "./dist/conformance/index.d.cts",
+        "default": "./dist/conformance/index.cjs"
+      }
     },
     "./package.json": "./package.json"
   },

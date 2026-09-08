@@ -4,6 +4,7 @@ import type { InjectedConfig } from "../core/config";
 import { claimInstall } from "../core/guard";
 import {
   bytes,
+  inOrder,
   registerWallet,
   STANDARD_CONNECT,
   STANDARD_DISCONNECT,
@@ -66,8 +67,14 @@ export function installSolana(bridge: Bridge, config: InjectedConfig): void {
         connect: async (input?: { silent?: boolean }) => {
           const res = (await bridge.request("solana_connect", [
             { silent: Boolean(input?.silent) },
-          ])) as { address: string; publicKey: number[] } | null;
-          accounts = res ? [makeAccount(res)] : [];
+          ])) as { address: string; publicKey?: number[] } | null;
+          // A zero-length key would have the dApp build transactions for an
+          // account the wallet does not hold; a connect without one has failed.
+          const publicKey = res?.publicKey;
+          if (res && !(publicKey && publicKey.length > 0)) {
+            throw new Error("Wallet did not provide a public key for solana");
+          }
+          accounts = res && publicKey ? [makeAccount({ address: res.address, publicKey })] : [];
           emitChange();
           return { accounts };
         },
@@ -91,33 +98,34 @@ export function installSolana(bridge: Bridge, config: InjectedConfig): void {
       [SIGN_TRANSACTION]: {
         version: "1.0.0" as const,
         supportedTransactionVersions: ["legacy", 0] as const,
-        signTransaction: async (i: SignTxInput) => {
-          const res = (await bridge.request("solana_signTransaction", [
-            { tx: toNumbers(i.transaction), account: i.account.address },
-          ])) as { signedTx: number[] };
-          return [{ signedTransaction: bytes(res.signedTx) }];
-        },
+        signTransaction: (...inputs: SignTxInput[]) =>
+          inOrder(inputs, async (i) => {
+            const res = (await bridge.request("solana_signTransaction", [
+              { tx: toNumbers(i.transaction), account: i.account.address },
+            ])) as { signedTx: number[] };
+            return { signedTransaction: bytes(res.signedTx) };
+          }),
       },
       [SIGN_AND_SEND_TRANSACTION]: {
         version: "1.0.0" as const,
         supportedTransactionVersions: ["legacy", 0] as const,
-        signAndSendTransaction: async (i: SignTxInput) => {
-          const res = (await bridge.request("solana_signAndSendTransaction", [
-            { tx: toNumbers(i.transaction), account: i.account.address },
-          ])) as { signature: number[] };
-          return [{ signature: bytes(res.signature) }];
-        },
+        signAndSendTransaction: (...inputs: SignTxInput[]) =>
+          inOrder(inputs, async (i) => {
+            const res = (await bridge.request("solana_signAndSendTransaction", [
+              { tx: toNumbers(i.transaction), account: i.account.address },
+            ])) as { signature: number[] };
+            return { signature: bytes(res.signature) };
+          }),
       },
       [SIGN_MESSAGE]: {
         version: "1.0.0" as const,
-        signMessage: async (i: SignMessageInput) => {
-          const res = (await bridge.request("solana_signMessage", [
-            { message: toNumbers(i.message), account: i.account.address },
-          ])) as { signedMessage: number[]; signature: number[] };
-          return [
-            { signedMessage: bytes(res.signedMessage), signature: bytes(res.signature) },
-          ];
-        },
+        signMessage: (...inputs: SignMessageInput[]) =>
+          inOrder(inputs, async (i) => {
+            const res = (await bridge.request("solana_signMessage", [
+              { message: toNumbers(i.message), account: i.account.address },
+            ])) as { signedMessage: number[]; signature: number[] };
+            return { signedMessage: bytes(res.signedMessage), signature: bytes(res.signature) };
+          }),
       },
     },
   };

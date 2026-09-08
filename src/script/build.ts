@@ -95,7 +95,9 @@ export function buildInjectedScript(config: InjectedConfig): string {
   for (const family of familiesOf(config.networks)) {
     for (const name of BUNDLES_FOR[family]) {
       const bundle = INPAGE_BUNDLES[name];
-      if (bundle) parts.push(bundle);
+      // Each bundle is already self-contained; the wrapper keeps a bundle built
+      // by an older toolchain from reaching its neighbours' top-level scope.
+      if (bundle) parts.push(`(function(){\n${bundle}\n})();`);
     }
   }
   // WebViews treat a script whose last expression is undefined as an error.

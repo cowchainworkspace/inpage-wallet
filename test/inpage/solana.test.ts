@@ -29,6 +29,21 @@ function register(): StandardWallet[] {
   return wallets;
 }
 
+/** Drains the microtask queue the awaited requests are resolved through. */
+const flush = (): Promise<void> => new Promise((resolve) => void setTimeout(resolve, 0));
+
+/**
+ * A variadic sign asks for one signature at a time, so each answer is what
+ * releases the next request.
+ */
+async function respondEach(transport: FakeTransport, results: unknown[]): Promise<void> {
+  for (const [index, result] of results.entries()) {
+    await flush();
+    expect(transport.requests()).toHaveLength(index + 1);
+    transport.respond(result);
+  }
+}
+
 function install(): { wallet: StandardWallet; transport: FakeTransport } {
   const wallets = register();
   const transport = fakeTransport(DEFAULT_CHANNEL);
@@ -97,6 +112,84 @@ describe("Solana injection", () => {
     await expect(pending).resolves.toEqual([{ signedTransaction: new Uint8Array([4, 5]) }]);
   });
 
+  it("signs every transaction it was handed, in order", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["solana:signTransaction"] as {
+      signTransaction(
+        ...i: { transaction: Uint8Array; account: { address: string } }[]
+      ): Promise<{ signedTransaction: Uint8Array }[]>;
+    };
+
+    const pending = feature.signTransaction(
+      { transaction: new Uint8Array([1]), account: { address: ADDRESS } },
+      { transaction: new Uint8Array([2]), account: { address: ADDRESS } },
+      { transaction: new Uint8Array([3]), account: { address: ADDRESS } },
+    );
+    await respondEach(transport, [{ signedTx: [10] }, { signedTx: [20] }, { signedTx: [30] }]);
+
+    await expect(pending).resolves.toEqual([
+      { signedTransaction: new Uint8Array([10]) },
+      { signedTransaction: new Uint8Array([20]) },
+      { signedTransaction: new Uint8Array([30]) },
+    ]);
+    expect(transport.requests().map((r) => r.params)).toEqual([
+      [{ tx: [1], account: ADDRESS }],
+      [{ tx: [2], account: ADDRESS }],
+      [{ tx: [3], account: ADDRESS }],
+    ]);
+  });
+
+  it("sends and signs every transaction it was handed, in order", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["solana:signAndSendTransaction"] as {
+      signAndSendTransaction(
+        ...i: { transaction: Uint8Array; account: { address: string } }[]
+      ): Promise<{ signature: Uint8Array }[]>;
+    };
+
+    const pending = feature.signAndSendTransaction(
+      { transaction: new Uint8Array([1]), account: { address: ADDRESS } },
+      { transaction: new Uint8Array([2]), account: { address: ADDRESS } },
+      { transaction: new Uint8Array([3]), account: { address: ADDRESS } },
+    );
+    await respondEach(transport, [
+      { signature: [10] },
+      { signature: [20] },
+      { signature: [30] },
+    ]);
+
+    await expect(pending).resolves.toEqual([
+      { signature: new Uint8Array([10]) },
+      { signature: new Uint8Array([20]) },
+      { signature: new Uint8Array([30]) },
+    ]);
+    expect(transport.requests().map((r) => r.method)).toEqual([
+      "solana_signAndSendTransaction",
+      "solana_signAndSendTransaction",
+      "solana_signAndSendTransaction",
+    ]);
+  });
+
+  it("rejects the whole call when one input fails, and asks for no more", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["solana:signTransaction"] as {
+      signTransaction(
+        ...i: { transaction: Uint8Array; account: { address: string } }[]
+      ): Promise<unknown>;
+    };
+
+    const pending = feature.signTransaction(
+      { transaction: new Uint8Array([1]), account: { address: ADDRESS } },
+      { transaction: new Uint8Array([2]), account: { address: ADDRESS } },
+    );
+    await flush();
+    expect(transport.requests()).toHaveLength(1);
+    transport.fail({ code: 4001, message: "User rejected the request" });
+
+    await expect(pending).rejects.toMatchObject({ code: 4001 });
+    expect(transport.requests()).toHaveLength(1);
+  });
+
   it("signs a message as bytes in both directions", async () => {
     const { wallet, transport } = install();
     const feature = wallet.features["solana:signMessage"] as {
@@ -117,6 +210,37 @@ describe("Solana injection", () => {
     ]);
   });
 
+  it("signs every message it was handed, in order", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["solana:signMessage"] as {
+      signMessage(
+        ...i: { message: Uint8Array; account: { address: string } }[]
+      ): Promise<{ signature: Uint8Array }[]>;
+    };
+
+    const pending = feature.signMessage(
+      { message: new Uint8Array([1]), account: { address: ADDRESS } },
+      { message: new Uint8Array([2]), account: { address: ADDRESS } },
+      { message: new Uint8Array([3]), account: { address: ADDRESS } },
+    );
+    await respondEach(transport, [
+      { signedMessage: [1], signature: [11] },
+      { signedMessage: [2], signature: [22] },
+      { signedMessage: [3], signature: [33] },
+    ]);
+
+    await expect(pending).resolves.toEqual([
+      { signedMessage: new Uint8Array([1]), signature: new Uint8Array([11]) },
+      { signedMessage: new Uint8Array([2]), signature: new Uint8Array([22]) },
+      { signedMessage: new Uint8Array([3]), signature: new Uint8Array([33]) },
+    ]);
+    expect(transport.requests().map((r) => r.params)).toEqual([
+      [{ message: [1], account: ADDRESS }],
+      [{ message: [2], account: ADDRESS }],
+      [{ message: [3], account: ADDRESS }],
+    ]);
+  });
+
   it("drops accounts when the host reports a disconnect", async () => {
     const { wallet, transport } = install();
     const connect = wallet.features["standard:connect"] as {
@@ -129,13 +253,35 @@ describe("Solana injection", () => {
     events.on("change", onChange);
 
     const pending = connect.connect();
-    transport.respond({ address: ADDRESS, publicKey: [] });
+    transport.respond({ address: ADDRESS, publicKey: [1, 2, 3] });
     await pending;
 
     transport.deliver({ kind: "event", family: "solana", event: "accountsChanged", data: [] });
 
     expect(wallet.accounts).toEqual([]);
     expect(onChange).toHaveBeenLastCalledWith({ accounts: [] });
+  });
+
+  it("fails the connect when the host returns no public key", async () => {
+    const { wallet, transport } = install();
+    const connect = wallet.features["standard:connect"] as { connect(): Promise<unknown> };
+
+    const pending = connect.connect();
+    transport.respond({ address: ADDRESS });
+
+    await expect(pending).rejects.toThrow(/public key/i);
+    expect(wallet.accounts).toEqual([]);
+  });
+
+  it("fails the connect when the host returns a zero-length public key", async () => {
+    const { wallet, transport } = install();
+    const connect = wallet.features["standard:connect"] as { connect(): Promise<unknown> };
+
+    const pending = connect.connect();
+    transport.respond({ address: ADDRESS, publicKey: [] });
+
+    await expect(pending).rejects.toThrow(/public key/i);
+    expect(wallet.accounts).toEqual([]);
   });
 
   it("is a no-op on a second injection", () => {

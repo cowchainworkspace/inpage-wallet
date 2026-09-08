@@ -15,9 +15,9 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { checkInpageBundle, type ConformanceReport } from "../../src/conformance/index";
-import { availableBundles } from "../../src/script/build";
+import { availableBundles, buildPreamble } from "../../src/script/build";
 import type { ChainFamily } from "../../src/protocol/networks";
-import { IDENTITY } from "./fake-transport";
+import { configFor, IDENTITY } from "./fake-transport";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const distDir = resolve(root, "dist/inpage");
@@ -55,12 +55,27 @@ async function buildBundlesIfMissing(): Promise<void> {
   );
 }
 
-async function sourceFor(family: ChainFamily): Promise<string> {
+/** Concatenated the way a host assembles them, with nothing added between. */
+async function sourceFor(...families: ChainFamily[]): Promise<string> {
+  const names = families.flatMap((family) => BUNDLE_FILES_FOR[family]);
   const files = await Promise.all(
-    BUNDLE_FILES_FOR[family].map((name) => readFile(resolve(distDir, `${name}.iife.js`), "utf8")),
+    names.map((name) => readFile(resolve(distDir, `${name}.iife.js`), "utf8")),
   );
   return files.join("\n");
 }
+
+const ALL_FAMILIES = Object.keys(BUNDLE_FILES_FOR) as ChainFamily[];
+
+/** Everything a bundle is allowed to leave on the window it ran in. */
+const DOCUMENTED_GLOBALS = new Set([
+  "ethereum",
+  "cardano",
+  "tronLink",
+  "tronWeb",
+  "crossmark",
+  "__inpageWalletInstalled",
+  "__inpageWalletDeliver",
+]);
 
 /** An iframe is the cheapest fresh window: no leftover provider, no leftover flag. */
 function freshWindow(): Window & typeof globalThis {
@@ -99,4 +114,39 @@ describe("built chain bundles", () => {
       expect(report.ok, explain(report)).toBe(true);
     },
   );
+
+  // A single scope is what a host injects: minified helpers hoisted above a
+  // bundle's own wrapper would be shared, and every family but the last would
+  // post envelopes built from another bundle's copy.
+  for (const [label, families] of [
+    ["registration order", ALL_FAMILIES],
+    ["reverse order", [...ALL_FAMILIES].reverse()],
+  ] as const) {
+    it(`passes conformance with every family in one document, in ${label}`, async () => {
+      await buildBundlesIfMissing();
+      const source = await sourceFor(...families);
+
+      const report = await checkInpageBundle(
+        source,
+        { identity: IDENTITY, families: [...families] },
+        { window: freshWindow() },
+      );
+
+      expect(report.ok, explain(report)).toBe(true);
+    });
+  }
+
+  it.each(BUNDLE_FILES)("leaves no top-level binding on the page: %s", async (name) => {
+    await buildBundlesIfMissing();
+    const win = freshWindow() as Window & typeof globalThis & { eval(code: string): unknown };
+    win.eval(buildPreamble(configFor(ALL_FAMILIES)));
+
+    const before = new Set(Object.getOwnPropertyNames(win));
+    win.eval(await readFile(resolve(distDir, `${name}.iife.js`), "utf8"));
+
+    const added = Object.getOwnPropertyNames(win).filter(
+      (key) => !before.has(key) && !DOCUMENTED_GLOBALS.has(key),
+    );
+    expect(added).toEqual([]);
+  });
 });

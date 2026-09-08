@@ -81,6 +81,35 @@ describe("Bitcoin injection", () => {
     await expect(pending).resolves.toEqual([{ signedPsbt: new Uint8Array([111, 107]) }]);
   });
 
+  it("signs every PSBT it was handed, in order", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["bitcoin:signTransaction"] as {
+      signTransaction(...i: { psbt: Uint8Array }[]): Promise<{ signedPsbt: Uint8Array }[]>;
+    };
+
+    const pending = feature.signTransaction(
+      { psbt: new Uint8Array([111, 110, 101]) },
+      { psbt: new Uint8Array([116, 119, 111]) },
+      { psbt: new Uint8Array([116, 104, 114, 101, 101]) },
+    );
+    for (const [index, signed] of ["a", "b", "c"].entries()) {
+      await new Promise<void>((resolve) => void setTimeout(resolve, 0));
+      expect(transport.requests()).toHaveLength(index + 1);
+      transport.respond(btoa(signed));
+    }
+
+    await expect(pending).resolves.toEqual([
+      { signedPsbt: new Uint8Array([97]) },
+      { signedPsbt: new Uint8Array([98]) },
+      { signedPsbt: new Uint8Array([99]) },
+    ]);
+    expect(transport.requests().map((r) => r.params)).toEqual([
+      [{ psbt: btoa("one") }],
+      [{ psbt: btoa("two") }],
+      [{ psbt: btoa("three") }],
+    ]);
+  });
+
   it("signs a message decoded from bytes", async () => {
     const { wallet, transport } = install();
     const feature = wallet.features["bitcoin:signMessage"] as {
@@ -99,11 +128,22 @@ describe("Bitcoin injection", () => {
     const { wallet, transport } = install();
     const feature = wallet.features["bitcoin:connect"] as { connect(): Promise<unknown> };
     const pending = feature.connect();
-    transport.respond({ address: ADDRESS });
+    transport.respond({ address: ADDRESS, publicKey: [2, 3] });
     await pending;
 
     transport.deliver({ kind: "event", family: "btc", event: "accountsChanged", data: [] });
 
+    expect(wallet.accounts).toEqual([]);
+  });
+
+  it("fails the connect when the host returns no public key", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["bitcoin:connect"] as { connect(): Promise<unknown> };
+
+    const pending = feature.connect();
+    transport.respond({ address: ADDRESS, addressType: "p2wpkh" });
+
+    await expect(pending).rejects.toThrow(/public key/i);
     expect(wallet.accounts).toEqual([]);
   });
 

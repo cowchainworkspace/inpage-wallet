@@ -22,7 +22,17 @@ type RnWindow = Window & {
   eval(script: string): unknown;
 };
 
-type Page = { win: RnWindow; posted: string[]; announced: Announced[] };
+type StandardWallet = {
+  chains: readonly string[];
+  features: Record<string, { connect?(i?: { silent?: boolean }): Promise<unknown> }>;
+};
+
+type Page = {
+  win: RnWindow;
+  posted: string[];
+  announced: Announced[];
+  wallets: StandardWallet[];
+};
 
 /**
  * The preamble locks its globals to the document it ran in, so each case gets a
@@ -36,11 +46,24 @@ function freshPage(): Page {
 
   const posted: string[] = [];
   const announced: Announced[] = [];
+  const wallets: StandardWallet[] = [];
   win.ReactNativeWebView = { postMessage: (data: string) => void posted.push(data) };
   win.addEventListener("eip6963:announceProvider", (event) => {
     announced.push((event as CustomEvent<Announced>).detail);
   });
-  return { win, posted, announced };
+  win.addEventListener("wallet-standard:register-wallet", (event) => {
+    const detail = (event as unknown as { detail: (api: { register(w: unknown): void }) => void })
+      .detail;
+    detail({ register: (w) => void wallets.push(w as StandardWallet) });
+  });
+  return { win, posted, announced, wallets };
+}
+
+/** Every request envelope the page posted, in order. */
+function requests(posted: string[]): Record<string, unknown>[] {
+  return posted
+    .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+    .filter((env) => env.kind === "request");
 }
 
 function frozenConfigLiteral(script: string): string {
@@ -116,6 +139,50 @@ describe("buildInjectedScript", () => {
     page.win.eval(script);
 
     expect(page.announced).toHaveLength(1);
+  });
+});
+
+describe("buildInjectedScript with more than one family", () => {
+  for (const order of [
+    ["evm", "solana"],
+    ["solana", "evm"],
+  ] as const) {
+    it(`keeps every family's envelopes well formed: ${order.join(", ")}`, async () => {
+      const page = freshPage();
+      page.win.eval(buildInjectedScript(configFor([...order])));
+
+      const solana = page.wallets.find((w) => w.chains.some((c) => c.startsWith("solana:")));
+      const evm = page.announced[0]?.provider;
+      expect(solana, "no Solana wallet was registered").toBeDefined();
+      expect(evm, "no EVM provider was announced").toBeDefined();
+
+      void evm?.request({ method: "eth_chainId" });
+      void solana?.features["standard:connect"]?.connect?.({ silent: true });
+      await new Promise<void>((resolve) => void setTimeout(resolve, 0));
+
+      const sent = requests(page.posted);
+      expect(sent.map((env) => env.method)).toEqual(["eth_chainId", "solana_connect"]);
+      for (const env of sent) {
+        expect(env).toMatchObject({
+          channel: DEFAULT_CHANNEL,
+          direction: "page-to-host",
+          kind: "request",
+        });
+        expect(typeof env.id).toBe("string");
+      }
+    });
+  }
+
+  it("announces a ready envelope for each family", () => {
+    const page = freshPage();
+
+    page.win.eval(buildInjectedScript(configFor(["evm", "solana"])));
+
+    const ready = page.posted
+      .map((raw) => JSON.parse(raw) as { kind: string; families?: string[] })
+      .filter((env) => env.kind === "ready")
+      .flatMap((env) => env.families ?? []);
+    expect(ready.sort()).toEqual(["evm", "solana"]);
   });
 });
 

@@ -85,10 +85,25 @@ export function deliveryScript(env: HostToPageEnvelope, nonce?: string | null): 
   return `window.${RN_RECEIVE} && window.${RN_RECEIVE}(${jsLiteral(env)}, ${jsLiteral(nonce)}); true;`;
 }
 
+/** Why the transport refused a message. Never says which nonce was expected. */
+export type RnDropReason =
+  | "no-commit"
+  | "nonce-mismatch"
+  | "origin-mismatch"
+  | "oversized"
+  | "malformed";
+
 export type RnHostTransportOptions = {
   /** Wire this to `webView.injectJavaScript`. */
   inject(script: string): void;
   channel?: string | undefined;
+  /**
+   * Called for every message the transport refuses, in both directions. A page
+   * injected with a nonce the host has since rotated is dropped as
+   * `nonce-mismatch` and waits forever otherwise; this is what makes it visible.
+   * The nonce itself is never passed on.
+   */
+  onDrop?(reason: RnDropReason, detail: { origin?: string; size?: number }): void;
 };
 
 /** Above any legitimate envelope, and small enough that parsing one cannot stall. */
@@ -111,16 +126,39 @@ export type RnHostTransport = HostTransport & {
   commit(navigation: RnCommittedNavigation | null): void;
 };
 
+/** `process` is not declared in a WebView, so it is read off globalThis. */
+function inDevelopment(): boolean {
+  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
+  return proc?.env?.NODE_ENV !== "production";
+}
+
 export function createRnHostTransport(options: RnHostTransportOptions): RnHostTransport {
   const channel = options.channel ?? DEFAULT_CHANNEL;
   const handlers: ((origin: string, env: PageToHostEnvelope) => void)[] = [];
   let current: RnCommittedNavigation | null = null;
+  /** One warning per reason per document: a stranded page drops every message. */
+  const warned = new Set<RnDropReason>();
+
+  function drop(reason: RnDropReason, detail: { origin?: string; size?: number } = {}): void {
+    if (options.onDrop) {
+      try {
+        options.onDrop(reason, detail);
+      } catch {
+        /* a host callback must not break the bridge */
+      }
+      return;
+    }
+    if (warned.has(reason) || !inDevelopment()) return;
+    warned.add(reason);
+    globalThis.console?.warn?.(`[inpage-wallet] dropped a WebView message: ${reason}`, detail);
+  }
 
   return {
     // A WebView has one document; injecting an answer for an origin that is no
     // longer showing would hand it to whatever replaced it.
     deliver(origin: string, env: HostToPageEnvelope): void {
-      if (!current || origin !== current.origin) return;
+      if (!current) return drop("no-commit", { origin });
+      if (origin !== current.origin) return drop("origin-mismatch", { origin });
       options.inject(deliveryScript(env, current.nonce));
     },
     onMessage(handler): void {
@@ -128,18 +166,21 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
     },
     commit(navigation): void {
       current = navigation;
+      warned.clear();
     },
     receive(origin, data): void {
-      if (!origin || !current || origin !== current.origin) return;
-      if (typeof data !== "string" || data.length > MAX_ENVELOPE_BYTES) return;
+      if (!origin || !current) return drop("no-commit", origin ? { origin } : {});
+      if (origin !== current.origin) return drop("origin-mismatch", { origin });
+      if (typeof data !== "string") return drop("malformed", { origin });
+      if (data.length > MAX_ENVELOPE_BYTES) return drop("oversized", { origin, size: data.length });
       let parsed: unknown;
       try {
         parsed = JSON.parse(data);
       } catch {
-        return;
+        return drop("malformed", { origin });
       }
-      if (!isPageToHost(parsed, channel)) return;
-      if (parsed.n !== current.nonce) return;
+      if (!isPageToHost(parsed, channel)) return drop("malformed", { origin });
+      if (parsed.n !== current.nonce) return drop("nonce-mismatch", { origin });
       for (const handler of handlers) handler(origin, parsed);
     },
   };

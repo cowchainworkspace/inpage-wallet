@@ -88,7 +88,16 @@ for (const [index, { name, entry }] of list.entries()) {
       rollupOptions: { output: { inlineDynamicImports: true } },
     },
   });
-  bundles[name] = await readFile(resolve(outDir, `${name}.iife.js`), "utf8");
+  // Rollup's IIFE wrapper is not the outermost scope of what it writes: esbuild
+  // lowers the object spread to the es2017 target after rollup has wrapped, and
+  // hoists its helpers above that wrapper as top-level `var`s. Two bundles
+  // evaluated in one document then overwrite each other's helpers, and the
+  // loser posts envelopes built by the winner's copy. Wrapping the whole file
+  // is what makes it self-contained.
+  const file = resolve(outDir, `${name}.iife.js`);
+  const code = `(function(){\n${(await readFile(file, "utf8")).trim()}\n})();\n`;
+  await writeFile(file, code, "utf8");
+  bundles[name] = code;
 }
 
 await mkdir(dirname(generated), { recursive: true });

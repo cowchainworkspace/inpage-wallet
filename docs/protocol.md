@@ -199,6 +199,12 @@ opens UI — that is how an eager reconnect on page load stays silent, and it
 takes priority even when `canReuseSession` refused. Concurrent connects for one
 origin and family are coalesced into a single prompt.
 
+**A `solana` or `btc` connect answers with a public key or it fails.** The page
+builds transactions from it, so a host that grants an account without one is
+answered `-32603` ("Wallet did not provide a public key for <family>") and no
+session is written; the page treats a connect result with no key, or a
+zero-length one, as a failed connect rather than announcing an empty account.
+
 Results per family:
 
 | family    | result |
@@ -287,6 +293,13 @@ Wire shapes worth stating:
 | `cardano_signData` | `[{ address, payload }]` | `{ signature, key }` |
 | `xrpl_signTransaction` | `[{ tx_json, submit }]` | `{ tx_blob?, hash?, … }` |
 | `btc_signPsbt` | `[{ psbt }]` (base64) | signed PSBT, base64 |
+
+**A batched sign is n requests, not one.** The Wallet Standard sign methods are
+variadic — `signTransaction(tx1, tx2, tx3)` — and the page turns each input into
+its own request, sent in order and one at a time, so a host that allows a single
+prompt per origin is never asked to open several. The outputs come back in the
+same order, one per input; the first failure rejects the whole call and the
+remaining inputs are never requested.
 
 ## Error codes
 
