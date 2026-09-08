@@ -4,6 +4,7 @@ import type { InjectedConfig } from "../core/config";
 import { claimInstall } from "../core/guard";
 import {
   bytes,
+  inOrder,
   registerWallet,
   STANDARD_EVENTS,
   type ChangeListener,
@@ -105,20 +106,22 @@ export function installBtc(bridge: Bridge, config: InjectedConfig): void {
       },
       [SIGN_MESSAGE]: {
         version: "1.0.0" as const,
-        signMessage: async (input: { message: Uint8Array }) => {
-          const message = new TextDecoder().decode(input.message);
-          const signature = (await bridge.request("btc_signMessage", [{ message }])) as string;
-          return [{ signature: b64ToBytes(signature) }];
-        },
+        signMessage: (...inputs: { message: Uint8Array }[]) =>
+          inOrder(inputs, async (input) => {
+            const message = new TextDecoder().decode(input.message);
+            const signature = (await bridge.request("btc_signMessage", [{ message }])) as string;
+            return { signature: b64ToBytes(signature) };
+          }),
       },
       [SIGN_TX]: {
         version: "1.0.0" as const,
-        signTransaction: async (input: { psbt: Uint8Array }) => {
-          const signed = (await bridge.request("btc_signPsbt", [
-            { psbt: bytesToB64(input.psbt) },
-          ])) as string;
-          return [{ signedPsbt: b64ToBytes(signed) }];
-        },
+        signTransaction: (...inputs: { psbt: Uint8Array }[]) =>
+          inOrder(inputs, async (input) => {
+            const signed = (await bridge.request("btc_signPsbt", [
+              { psbt: bytesToB64(input.psbt) },
+            ])) as string;
+            return { signedPsbt: b64ToBytes(signed) };
+          }),
       },
     },
   };

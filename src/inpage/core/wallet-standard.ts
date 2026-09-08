@@ -50,3 +50,17 @@ export function bytes(value: unknown): Uint8Array {
 export function toNumbers(value: Uint8Array | number[]): number[] {
   return Array.from(value);
 }
+
+/**
+ * Wallet Standard sign methods are variadic. One request per input, sequentially
+ * so a host holding one prompt at a time is not asked to open several, and the
+ * first failure rejects the whole call without asking for the rest.
+ */
+export async function inOrder<I, O>(
+  inputs: readonly I[],
+  run: (input: I) => Promise<O>,
+): Promise<O[]> {
+  const outputs: O[] = [];
+  for (const input of inputs) outputs.push(await run(input));
+  return outputs;
+}

@@ -4,6 +4,7 @@ import type { InjectedConfig } from "../core/config";
 import { claimInstall } from "../core/guard";
 import {
   bytes,
+  inOrder,
   registerWallet,
   STANDARD_CONNECT,
   STANDARD_DISCONNECT,
@@ -91,33 +92,34 @@ export function installSolana(bridge: Bridge, config: InjectedConfig): void {
       [SIGN_TRANSACTION]: {
         version: "1.0.0" as const,
         supportedTransactionVersions: ["legacy", 0] as const,
-        signTransaction: async (i: SignTxInput) => {
-          const res = (await bridge.request("solana_signTransaction", [
-            { tx: toNumbers(i.transaction), account: i.account.address },
-          ])) as { signedTx: number[] };
-          return [{ signedTransaction: bytes(res.signedTx) }];
-        },
+        signTransaction: (...inputs: SignTxInput[]) =>
+          inOrder(inputs, async (i) => {
+            const res = (await bridge.request("solana_signTransaction", [
+              { tx: toNumbers(i.transaction), account: i.account.address },
+            ])) as { signedTx: number[] };
+            return { signedTransaction: bytes(res.signedTx) };
+          }),
       },
       [SIGN_AND_SEND_TRANSACTION]: {
         version: "1.0.0" as const,
         supportedTransactionVersions: ["legacy", 0] as const,
-        signAndSendTransaction: async (i: SignTxInput) => {
-          const res = (await bridge.request("solana_signAndSendTransaction", [
-            { tx: toNumbers(i.transaction), account: i.account.address },
-          ])) as { signature: number[] };
-          return [{ signature: bytes(res.signature) }];
-        },
+        signAndSendTransaction: (...inputs: SignTxInput[]) =>
+          inOrder(inputs, async (i) => {
+            const res = (await bridge.request("solana_signAndSendTransaction", [
+              { tx: toNumbers(i.transaction), account: i.account.address },
+            ])) as { signature: number[] };
+            return { signature: bytes(res.signature) };
+          }),
       },
       [SIGN_MESSAGE]: {
         version: "1.0.0" as const,
-        signMessage: async (i: SignMessageInput) => {
-          const res = (await bridge.request("solana_signMessage", [
-            { message: toNumbers(i.message), account: i.account.address },
-          ])) as { signedMessage: number[]; signature: number[] };
-          return [
-            { signedMessage: bytes(res.signedMessage), signature: bytes(res.signature) },
-          ];
-        },
+        signMessage: (...inputs: SignMessageInput[]) =>
+          inOrder(inputs, async (i) => {
+            const res = (await bridge.request("solana_signMessage", [
+              { message: toNumbers(i.message), account: i.account.address },
+            ])) as { signedMessage: number[]; signature: number[] };
+            return { signedMessage: bytes(res.signedMessage), signature: bytes(res.signature) };
+          }),
       },
     },
   };

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createInjectedWallet } from "../../src/inpage";
 import { resetInstalls } from "../../src/inpage/core/guard";
@@ -79,6 +79,34 @@ describe("Bitcoin injection", () => {
 
     transport.respond(btoa("ok"));
     await expect(pending).resolves.toEqual([{ signedPsbt: new Uint8Array([111, 107]) }]);
+  });
+
+  it("signs every PSBT it was handed, in order", async () => {
+    const { wallet, transport } = install();
+    const feature = wallet.features["bitcoin:signTransaction"] as {
+      signTransaction(...i: { psbt: Uint8Array }[]): Promise<{ signedPsbt: Uint8Array }[]>;
+    };
+
+    const pending = feature.signTransaction(
+      { psbt: new Uint8Array([111, 110, 101]) },
+      { psbt: new Uint8Array([116, 119, 111]) },
+      { psbt: new Uint8Array([116, 104, 114, 101, 101]) },
+    );
+    for (const [index, signed] of ["a", "b", "c"].entries()) {
+      await vi.waitFor(() => expect(transport.requests()).toHaveLength(index + 1));
+      transport.respond(btoa(signed));
+    }
+
+    await expect(pending).resolves.toEqual([
+      { signedPsbt: new Uint8Array([97]) },
+      { signedPsbt: new Uint8Array([98]) },
+      { signedPsbt: new Uint8Array([99]) },
+    ]);
+    expect(transport.requests().map((r) => r.params)).toEqual([
+      [{ psbt: btoa("one") }],
+      [{ psbt: btoa("two") }],
+      [{ psbt: btoa("three") }],
+    ]);
   });
 
   it("signs a message decoded from bytes", async () => {

@@ -288,6 +288,13 @@ Wire shapes worth stating:
 | `xrpl_signTransaction` | `[{ tx_json, submit }]` | `{ tx_blob?, hash?, … }` |
 | `btc_signPsbt` | `[{ psbt }]` (base64) | signed PSBT, base64 |
 
+**A batched sign is n requests, not one.** The Wallet Standard sign methods are
+variadic — `signTransaction(tx1, tx2, tx3)` — and the page turns each input into
+its own request, sent in order and one at a time, so a host that allows a single
+prompt per origin is never asked to open several. The outputs come back in the
+same order, one per input; the first failure rejects the whole call and the
+remaining inputs are never requested.
+
 ## Error codes
 
 | code     | meaning |
