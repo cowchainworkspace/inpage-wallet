@@ -24,6 +24,13 @@ pnpm add inpage-wallet
 Node 24, pnpm 10. `tronweb` is an optional peer dependency, needed only by the
 `inpage/tron-full` entry.
 
+The package ships ESM and CommonJS side by side, so every subpath resolves under
+both `import` and `require`. **Jest needs no configuration for it** — no
+`moduleNameMapper` pointing into `dist`, and no
+`testEnvironmentOptions.customExportConditions`, which would change resolution
+for every other package in the suite. `sideEffects: false` still holds, so
+bundlers tree-shake the ESM build as before.
+
 ## Quickstart: browser extension
 
 Three contexts, three files. See `examples/extension-minimal` for the whole thing.

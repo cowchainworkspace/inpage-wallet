@@ -20,7 +20,9 @@ export default defineConfig({
     "script/index": "src/script/index.ts",
     "conformance/index": "src/conformance/index.ts",
   },
-  format: ["esm"],
+  // CJS as well as ESM: Jest and other CJS resolvers look for a `require`
+  // condition, and without one no subpath of this package resolves for them.
+  format: ["esm", "cjs"],
   target: "es2022",
   dts: { compilerOptions: { types: [] } },
   // Everything but the per-chain IIFEs, which scripts/bundle-inpage.mjs wrote
