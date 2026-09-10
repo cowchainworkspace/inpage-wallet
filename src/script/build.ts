@@ -86,12 +86,25 @@ export function buildPreamble(config: InjectedConfig): string {
 })();`;
 }
 
+export type InjectedScriptOptions = {
+  /**
+   * Raw scripts to run before the preamble — the TronWeb browser bundle from the
+   * host's own assets, say. Each gets a block of its own and is copied in as is.
+   */
+  prelude?: string[] | undefined;
+};
+
 /**
- * The whole injected script for a WebView: the preamble, the serialised config,
- * and one bundle per family the host registered.
+ * The whole injected script for a WebView: any prelude, the preamble with the
+ * serialised config, and one bundle per family the host registered.
  */
-export function buildInjectedScript(config: InjectedConfig): string {
-  const parts = [buildPreamble(config)];
+export function buildInjectedScript(
+  config: InjectedConfig,
+  options?: InjectedScriptOptions,
+): string {
+  const parts: string[] = [];
+  for (const script of options?.prelude ?? []) parts.push(`(function(){\n${script}\n})();`);
+  parts.push(buildPreamble(config));
   for (const family of familiesOf(config.networks)) {
     for (const name of BUNDLES_FOR[family]) {
       const bundle = INPAGE_BUNDLES[name];

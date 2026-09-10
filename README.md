@@ -232,6 +232,29 @@ call keeps running against your own node:
 
 The package never hardcodes a fullnode and adds no TronWeb dependency for either.
 
+### Tron: full SDK in a WebView
+
+`buildInjectedScript` takes a `prelude` — raw scripts that run, each in a block of
+its own, before the preamble. Ship the SDK's browser bundle
+(`node_modules/tronweb/dist/TronWeb.js`) from your own assets and the injected
+`tron` bundle finds the constructor it needs:
+
+```ts
+const injected = buildInjectedScript(
+  {
+    identity: IDENTITY,
+    networks: [{ id: "tron_main", family: "tron", name: "Tron", wire: { tronFullHost: NODE_URL } }],
+    nonce,
+    legacyGlobals: { tronWeb: true },
+  },
+  { prelude: [tronWebBundleSource] },
+);
+```
+
+`tronWebBundleSource` is that file's text, loaded however your app loads assets:
+nothing is fetched for you. With the flag on and no bundle shipped, nothing is
+built, `window.tron.tronWeb` stays `false`, and the bridge still works.
+
 ## Sessions
 
 The store is async so it can be backed by an API. `layeredSessionStore` puts a
