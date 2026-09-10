@@ -206,9 +206,18 @@ adds one globally when you want that.
 | `evm`     | EIP-1193 announced over EIP-6963      | `eip6963:announceProvider`; `window.ethereum` only if `legacyGlobals.ethereum` |
 | `solana`  | Wallet Standard                       | `wallet-standard:register-wallet` |
 | `cardano` | CIP-30                                | `window.cardano.<key>` |
-| `tron`    | TronLink                              | `window.tronLink` |
+| `tron`    | TronLink, announced over TIP-6963     | `TIP6963:announceProvider`; `window.tron` and `window.tronLink` |
 | `xrp`     | Crossmark-style API and XLS-72d       | `window.crossmark` and the register event |
 | `btc`     | Bitcoin Wallet Standard               | `wallet-standard:register-wallet` |
+
+Tron's current surface is `window.tron`, announced over TIP-6963 exactly as the
+EVM provider is announced over EIP-6963: `request`, `on` / `removeListener`, and
+a `tronWeb` getter that stays `false` until the user authorizes. The
+authorization method TronLink documents is `eth_requestAccounts`; it is
+translated to `tron_requestAccounts` on the page — no `eth_*` name is ever
+forwarded to the host — and answers with the address array. `window.tronLink`
+stays for legacy dApps, with `ready` and its `{ code, message }` answer to
+`tron_requestAccounts`. Any method that is not `tron_*` answers `4200`.
 
 `inpage-wallet/inpage/tron-full` additionally puts a real TronWeb instance on
 `window.tronWeb` for dApps that drive the SDK. You construct the instance with
