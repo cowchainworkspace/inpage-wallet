@@ -1,6 +1,6 @@
 {
   "name": "inpage-wallet",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": false,
   "description": "Headless, brand-neutral wallet injection and request routing for dApp pages. EIP-6963, Wallet Standard, CIP-30, TronLink, XRPL and BTC providers over a pluggable transport.",
   "license": "MIT",
