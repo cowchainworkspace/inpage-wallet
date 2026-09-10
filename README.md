@@ -219,10 +219,18 @@ forwarded to the host — and answers with the address array. `window.tronLink`
 stays for legacy dApps, with `ready` and its `{ code, message }` answer to
 `tron_requestAccounts`. Any method that is not `tron_*` answers `4200`.
 
-`inpage-wallet/inpage/tron-full` additionally puts a real TronWeb instance on
-`window.tronWeb` for dApps that drive the SDK. You construct the instance with
-your own fullnode and hand it in; the package overrides only the signing methods.
-It is a separate entry so nobody pays for TronWeb by accident.
+Tron dApps build transactions with a TronWeb instance, so a `request` bridge
+alone is not enough for them. There are two ways to put one on the page, and both
+override only `trx.sign`, `trx.multiSign` and `trx.signMessageV2` — every other
+call keeps running against your own node:
+
+- `inpage-wallet/inpage/tron-full` takes an instance you constructed and handed
+  in. Its own entry, so importing the thin `tron` one costs no TronWeb dependency.
+- `legacyGlobals: { tronWeb: true }` builds one in the page from a `TronWeb`
+  constructor already there, pointed at `wire.tronFullHost` of your default tron
+  network. Nothing is built without both, and `tronWeb` then stays `false`.
+
+The package never hardcodes a fullnode and adds no TronWeb dependency for either.
 
 ## Sessions
 

@@ -132,7 +132,8 @@ on `solana_signMessage` however it asked.
 
 A network is `{ id, family, name, wire }`. `id` is the host's own. `wire` maps it
 to what each standard needs: `evmChainId` (hex), `walletStandardChain`,
-`cardanoNetworkId`, `caip2`.
+`cardanoNetworkId`, `caip2`, `tronFullHost` (the fullnode a page-built TronWeb
+instance reads from).
 
 ## Methods
 

@@ -1,4 +1,5 @@
 import { invalidParams, unsupportedMethod, userRejected, RPC_USER_REJECTED } from "../../protocol/errors";
+import { defaultNetworkFor } from "../../protocol/networks";
 import type { Bridge } from "../core/bridge";
 import { rpcException } from "../core/bridge";
 import type { InjectedConfig } from "../core/config";
@@ -62,6 +63,42 @@ function wrapTronWeb(bridge: Bridge, tronWeb: TronWebLike): void {
   (tronWeb as { ready?: boolean }).ready = false;
 }
 
+type TronWebCtor = new (options: { fullHost: string }) => TronWebLike;
+
+/** Silent in a page: a browser bundle has no `process`. */
+function warnDev(message: string): void {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
+    ?.env;
+  if (!env || env["NODE_ENV"] === "production") return;
+  console.warn(`[inpage-wallet] ${message}`);
+}
+
+/**
+ * The SDK's browser build leaves its module namespace on the page; a host that
+ * assigns the class itself works too. The node URL is the host's, never ours.
+ */
+function tronWebFromPage(config: InjectedConfig): TronWebLike | null {
+  const global = (globalThis as { TronWeb?: unknown }).TronWeb;
+  const ctor =
+    typeof global === "function" ? global : (global as { TronWeb?: unknown } | undefined)?.TronWeb;
+  if (typeof ctor !== "function") {
+    warnDev("legacyGlobals.tronWeb needs a TronWeb constructor on the page");
+    return null;
+  }
+  const fullHost = defaultNetworkFor(config.networks, "tron", config.defaultNetwork)?.wire
+    .tronFullHost;
+  if (!fullHost) {
+    warnDev("legacyGlobals.tronWeb needs wire.tronFullHost on the default tron network");
+    return null;
+  }
+  try {
+    return new (ctor as TronWebCtor)({ fullHost });
+  } catch {
+    warnDev("the page's TronWeb constructor threw");
+    return null;
+  }
+}
+
 /**
  * Tron providers on window.tron and legacy window.tronLink, announced over the
  * multi-wallet discovery event. Without `deps.tronWeb` no SDK is put on the page.
@@ -74,7 +111,8 @@ export function installTron(
   if (!claimInstall("tron")) return null;
 
   const listeners = new Map<string, Set<ProviderListener>>();
-  const tronWeb = deps?.tronWeb ?? null;
+  const tronWeb =
+    deps?.tronWeb ?? (config.legacyGlobals?.tronWeb === true ? tronWebFromPage(config) : null);
   let connectedAddress = "";
 
   if (tronWeb) wrapTronWeb(bridge, tronWeb);
