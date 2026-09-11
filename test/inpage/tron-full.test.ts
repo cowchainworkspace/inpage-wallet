@@ -12,7 +12,14 @@ import { configFor, fakeTransport, type FakeTransport } from "./fake-transport";
 
 const ADDRESS = "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE";
 
-type TronWindow = Window & { tronWeb?: unknown; tronLink?: { ready: boolean } };
+type TronWindow = Window & {
+  tron?: {
+    readonly tronWeb: unknown;
+    request(args: { method: string; params?: unknown }): Promise<unknown>;
+  };
+  tronWeb?: unknown;
+  tronLink?: { ready: boolean };
+};
 
 function fakeTronWeb(): TronWebLike & { setAddress: ReturnType<typeof vi.fn> } {
   return {
@@ -41,6 +48,7 @@ function install(): {
 beforeEach(() => {
   resetWindowListeners();
   resetInstalls();
+  delete (window as TronWindow).tron;
   delete (window as TronWindow).tronLink;
   delete (window as TronWindow).tronWeb;
 });
@@ -76,6 +84,21 @@ describe("Tron full SDK injection", () => {
     await expect(pending).resolves.toEqual({ code: 200, message: "ok" });
     expect(tronWeb.setAddress).toHaveBeenCalledWith(ADDRESS);
     expect(tronLink.ready).toBe(true);
+  });
+
+  it("hands the instance to window.tron only once the account is authorized", async () => {
+    const { tronWeb, transport } = install();
+    const provider = (window as TronWindow).tron;
+    if (!provider) throw new Error("no window.tron installed");
+
+    expect(provider.tronWeb).toBe(false);
+
+    const pending = provider.request({ method: "eth_requestAccounts" });
+    transport.respond({ address: ADDRESS });
+    await expect(pending).resolves.toEqual([ADDRESS]);
+
+    expect(provider.tronWeb).toBe(tronWeb);
+    expect((tronWeb as { ready?: boolean }).ready).toBe(true);
   });
 
   it("clears ready when the host reports a disconnect", async () => {

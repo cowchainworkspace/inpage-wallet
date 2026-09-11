@@ -206,14 +206,54 @@ adds one globally when you want that.
 | `evm`     | EIP-1193 announced over EIP-6963      | `eip6963:announceProvider`; `window.ethereum` only if `legacyGlobals.ethereum` |
 | `solana`  | Wallet Standard                       | `wallet-standard:register-wallet` |
 | `cardano` | CIP-30                                | `window.cardano.<key>` |
-| `tron`    | TronLink                              | `window.tronLink` |
+| `tron`    | TronLink, announced over TIP-6963     | `TIP6963:announceProvider`; `window.tron` and `window.tronLink` |
 | `xrp`     | Crossmark-style API and XLS-72d       | `window.crossmark` and the register event |
 | `btc`     | Bitcoin Wallet Standard               | `wallet-standard:register-wallet` |
 
-`inpage-wallet/inpage/tron-full` additionally puts a real TronWeb instance on
-`window.tronWeb` for dApps that drive the SDK. You construct the instance with
-your own fullnode and hand it in; the package overrides only the signing methods.
-It is a separate entry so nobody pays for TronWeb by accident.
+Tron's current surface is `window.tron`, announced over TIP-6963 exactly as the
+EVM provider is announced over EIP-6963: `request`, `on` / `removeListener`, and
+a `tronWeb` getter that stays `false` until the user authorizes. The
+authorization method TronLink documents is `eth_requestAccounts`; it is
+translated to `tron_requestAccounts` on the page — no `eth_*` name is ever
+forwarded to the host — and answers with the address array. `window.tronLink`
+stays for legacy dApps, with `ready` and its `{ code, message }` answer to
+`tron_requestAccounts`. Any method that is not `tron_*` answers `4200`.
+
+Tron dApps build transactions with a TronWeb instance, so a `request` bridge
+alone is not enough for them. There are two ways to put one on the page, and both
+override only `trx.sign`, `trx.multiSign` and `trx.signMessageV2` — every other
+call keeps running against your own node:
+
+- `inpage-wallet/inpage/tron-full` takes an instance you constructed and handed
+  in. Its own entry, so importing the thin `tron` one costs no TronWeb dependency.
+- `legacyGlobals: { tronWeb: true }` builds one in the page from a `TronWeb`
+  constructor already there, pointed at `wire.tronFullHost` of your default tron
+  network. Nothing is built without both, and `tronWeb` then stays `false`.
+
+The package never hardcodes a fullnode and adds no TronWeb dependency for either.
+
+### Tron: full SDK in a WebView
+
+`buildInjectedScript` takes a `prelude` — raw scripts that run, each in a block of
+its own, before the preamble. Ship the SDK's browser bundle
+(`node_modules/tronweb/dist/TronWeb.js`) from your own assets and the injected
+`tron` bundle finds the constructor it needs:
+
+```ts
+const injected = buildInjectedScript(
+  {
+    identity: IDENTITY,
+    networks: [{ id: "tron_main", family: "tron", name: "Tron", wire: { tronFullHost: NODE_URL } }],
+    nonce,
+    legacyGlobals: { tronWeb: true },
+  },
+  { prelude: [tronWebBundleSource] },
+);
+```
+
+`tronWebBundleSource` is that file's text, loaded however your app loads assets:
+nothing is fetched for you. With the flag on and no bundle shipped, nothing is
+built, `window.tron.tronWeb` stays `false`, and the bridge still works.
 
 ## Sessions
 

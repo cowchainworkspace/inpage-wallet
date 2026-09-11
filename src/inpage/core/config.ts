@@ -21,7 +21,10 @@ export type InjectedConfig = {
   legacyGlobals?: {
     /** Define window.ethereum if absent. Off by default: EIP-6963 only. */
     ethereum?: boolean | undefined;
-    /** Use the full TronWeb SDK entry instead of the thin tronLink bridge. */
+    /**
+     * Build a TronWeb instance from the page's own `TronWeb` global and expose it
+     * on window.tronWeb and window.tron.tronWeb. Needs `wire.tronFullHost` too.
+     */
     tronWeb?: boolean | undefined;
   } | undefined;
   /** window.cardano key dApps enumerate. Defaults to a slug of identity.name. */

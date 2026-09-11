@@ -126,13 +126,14 @@ on `solana_signMessage` however it asked.
 | `evm`     | EIP-1193 / EIP-6963      | `eip6963:announceProvider`, optionally `window.ethereum` |
 | `solana`  | Wallet Standard          | `wallet-standard:register-wallet`   |
 | `cardano` | CIP-30                   | `window.cardano.<key>`              |
-| `tron`    | TronLink                 | `window.tronLink` (+ `window.tronWeb` in the `tron-full` entry) |
+| `tron`    | TronLink / TIP-6963      | `TIP6963:announceProvider`, `window.tron`, `window.tronLink` |
 | `xrp`     | Crossmark-style + XLS-72d | `window.crossmark` and `wallet-standard:register-wallet` |
 | `btc`     | Bitcoin Wallet Standard  | `wallet-standard:register-wallet`   |
 
 A network is `{ id, family, name, wire }`. `id` is the host's own. `wire` maps it
 to what each standard needs: `evmChainId` (hex), `walletStandardChain`,
-`cardanoNetworkId`, `caip2`.
+`cardanoNetworkId`, `caip2`, `tronFullHost` (the fullnode a page-built TronWeb
+instance reads from).
 
 ## Methods
 

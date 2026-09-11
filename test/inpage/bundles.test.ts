@@ -70,6 +70,7 @@ const ALL_FAMILIES = Object.keys(BUNDLE_FILES_FOR) as ChainFamily[];
 const DOCUMENTED_GLOBALS = new Set([
   "ethereum",
   "cardano",
+  "tron",
   "tronLink",
   "tronWeb",
   "crossmark",

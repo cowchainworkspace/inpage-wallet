@@ -4,28 +4,48 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createInjectedWallet } from "../../src/inpage";
+import { FALLBACK_ICON } from "../../src/inpage/core/config";
 import { resetInstalls } from "../../src/inpage/core/guard";
+import type { TronProvider } from "../../src/inpage/chains/tron";
 import { DEFAULT_CHANNEL } from "../../src/protocol/envelope";
 import { resetWindowListeners } from "./dom";
-import { configFor, fakeTransport, type FakeTransport } from "./fake-transport";
+import type { InjectedConfig } from "../../src/inpage/core/config";
+import { configFor, fakeTransport, IDENTITY, type FakeTransport } from "./fake-transport";
 
 const ADDRESS = "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE";
 
 type TronLink = { ready: boolean; request(a: { method: string; params?: unknown }): Promise<unknown> };
-type TronWindow = Window & { tronLink?: TronLink; tronWeb?: unknown };
+type TronWindow = Window & { tron?: TronProvider; tronLink?: TronLink; tronWeb?: unknown };
 
-function install(): { tronLink: TronLink; transport: FakeTransport } {
+type Announced = {
+  info: { uuid: string; name: string; icon: string; rdns: string };
+  provider: TronProvider;
+};
+
+function announcements(): Announced[] {
+  const seen: Announced[] = [];
+  window.addEventListener("TIP6963:announceProvider", (event) => {
+    seen.push((event as CustomEvent<Announced>).detail);
+  });
+  return seen;
+}
+
+function install(): { tronLink: TronLink; provider: TronProvider; transport: FakeTransport } {
   const transport = fakeTransport(DEFAULT_CHANNEL);
   createInjectedWallet(transport, configFor(["tron"]));
-  const tronLink = (window as TronWindow).tronLink;
+  const { tronLink, tron } = window as TronWindow;
   if (!tronLink) throw new Error("no tronLink installed");
-  return { tronLink, transport };
+  if (!tron) throw new Error("no window.tron installed");
+  return { tronLink, provider: tron, transport };
 }
 
 beforeEach(() => {
   resetWindowListeners();
   resetInstalls();
+  delete (window as TronWindow).tron;
   delete (window as TronWindow).tronLink;
+  delete (window as TronWindow).tronWeb;
+  delete (globalThis as { TronWeb?: unknown }).TronWeb;
 });
 
 describe("Tron injection", () => {
@@ -94,5 +114,257 @@ describe("Tron injection", () => {
     createInjectedWallet(fakeTransport(DEFAULT_CHANNEL), configFor(["tron"]));
 
     expect((window as TronWindow).tronLink).toBe(tronLink);
+  });
+});
+
+describe("Tron multi-wallet discovery", () => {
+  it("announces the configured identity with the provider on window.tron", () => {
+    const seen = announcements();
+    const { provider } = install();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.info).toEqual({
+      uuid: IDENTITY.uuid,
+      name: IDENTITY.name,
+      icon: FALLBACK_ICON,
+      rdns: IDENTITY.rdns,
+    });
+    expect(seen[0]?.provider).toBe(provider);
+  });
+
+  it("re-announces when a dApp asks and when the host sends its icon", () => {
+    const seen = announcements();
+    const { transport } = install();
+
+    window.dispatchEvent(new Event("TIP6963:requestProvider"));
+    transport.deliver({ kind: "init", icon: "data:image/png;base64,aa" });
+
+    expect(seen).toHaveLength(3);
+    expect(seen[2]?.info.icon).toBe("data:image/png;base64,aa");
+  });
+
+  it("leaves another wallet's window.tron in place", () => {
+    const other = { request: () => Promise.resolve(null) };
+    (window as unknown as { tron: unknown }).tron = other;
+
+    createInjectedWallet(fakeTransport(DEFAULT_CHANNEL), configFor(["tron"]));
+
+    expect((window as unknown as { tron: unknown }).tron).toBe(other);
+  });
+});
+
+describe("Tron provider on window.tron", () => {
+  it("authorizes with eth_requestAccounts over a tron_requestAccounts request", async () => {
+    const { provider, tronLink, transport } = install();
+
+    const pending = provider.request({ method: "eth_requestAccounts" });
+    expect(transport.lastRequest()).toMatchObject({ method: "tron_requestAccounts", params: [{}] });
+    transport.respond({ address: ADDRESS });
+
+    await expect(pending).resolves.toEqual([ADDRESS]);
+    expect(tronLink.ready).toBe(true);
+  });
+
+  it("rejects a refused authorization with a code the dApp can read", async () => {
+    const { provider, transport } = install();
+
+    const pending = provider.request({ method: "eth_requestAccounts" });
+    transport.respond(null);
+
+    await expect(pending).rejects.toMatchObject({ code: 4001 });
+  });
+
+  it("translates eth_accounts into the tron read", async () => {
+    const { provider, transport } = install();
+
+    const pending = provider.request({ method: "eth_accounts" });
+    expect(transport.lastRequest().method).toBe("tron_accounts");
+    transport.respond([ADDRESS]);
+
+    await expect(pending).resolves.toEqual([ADDRESS]);
+  });
+
+  it("never forwards an untranslated eth_ or wallet_ method to the host", async () => {
+    const { provider, transport } = install();
+
+    for (const method of ["eth_chainId", "personal_sign", "wallet_switchEthereumChain"]) {
+      await expect(provider.request({ method })).rejects.toMatchObject({ code: 4200 });
+    }
+    expect(transport.requests()).toHaveLength(0);
+  });
+
+  it("keeps tronWeb false with no instance to hand out", async () => {
+    const { provider, transport } = install();
+
+    expect(provider.tronWeb).toBe(false);
+    const pending = provider.request({ method: "eth_requestAccounts" });
+    transport.respond({ address: ADDRESS });
+    await pending;
+
+    expect(provider.tronWeb).toBe(false);
+  });
+
+  it("delivers the host's events to listeners until they are removed", () => {
+    const { provider, transport } = install();
+    const accounts: unknown[] = [];
+    const chains: unknown[] = [];
+    const onChain = (data: unknown): void => void chains.push(data);
+    provider.on("accountsChanged", (data) => void accounts.push(data));
+    provider.on("chainChanged", onChain);
+
+    transport.deliver({ kind: "event", family: "tron", event: "accountsChanged", data: [ADDRESS] });
+    transport.deliver({
+      kind: "event",
+      family: "tron",
+      event: "chainChanged",
+      data: { chainId: "0x2b6653dc" },
+    });
+    provider.removeListener("chainChanged", onChain);
+    transport.deliver({
+      kind: "event",
+      family: "tron",
+      event: "chainChanged",
+      data: { chainId: "0x94a9059e" },
+    });
+
+    expect(accounts).toEqual([[ADDRESS]]);
+    expect(chains).toEqual([{ chainId: "0x2b6653dc" }]);
+  });
+
+  it("takes the account the host announces as the authorized one", () => {
+    const { tronLink, transport } = install();
+
+    transport.deliver({ kind: "event", family: "tron", event: "accountsChanged", data: [ADDRESS] });
+
+    expect(tronLink.ready).toBe(true);
+  });
+});
+
+/** Stands in for the SDK's browser build, which leaves a namespace on the page. */
+class StubTronWeb {
+  static built = 0;
+  readonly fullHost: string;
+  address = "";
+  trx: Record<string, unknown> = {
+    sign: () => Promise.resolve("original"),
+    signMessageV2: () => Promise.resolve("original"),
+    multiSign: () => Promise.resolve("original"),
+  };
+
+  constructor(options: { fullHost: string }) {
+    this.fullHost = options.fullHost;
+    StubTronWeb.built += 1;
+  }
+
+  setAddress(address: string): void {
+    this.address = address;
+  }
+}
+
+const FULL_HOST = "https://tron.node.test";
+
+function pageConfig(options: { tronWeb: boolean; fullHost?: string }): InjectedConfig {
+  const base = configFor(["tron"]);
+  const [network] = base.networks;
+  if (!network) throw new Error("no tron fixture network");
+  return {
+    ...base,
+    networks: [
+      {
+        ...network,
+        wire: options.fullHost === undefined ? {} : { tronFullHost: options.fullHost },
+      },
+    ],
+    legacyGlobals: { tronWeb: options.tronWeb },
+  };
+}
+
+describe("Tron with a TronWeb constructor on the page", () => {
+  beforeEach(() => {
+    StubTronWeb.built = 0;
+  });
+
+  it("builds one instance from the host's node and bridges its signing calls", async () => {
+    (globalThis as { TronWeb?: unknown }).TronWeb = { TronWeb: StubTronWeb };
+    const transport = fakeTransport(DEFAULT_CHANNEL);
+
+    createInjectedWallet(transport, pageConfig({ tronWeb: true, fullHost: FULL_HOST }));
+    const instance = (window as TronWindow).tronWeb as StubTronWeb | undefined;
+
+    expect(StubTronWeb.built).toBe(1);
+    expect(instance?.fullHost).toBe(FULL_HOST);
+    expect((instance as unknown as { ready: boolean }).ready).toBe(false);
+
+    const trx = instance?.trx as { sign(t: unknown): Promise<unknown> };
+    const pending = trx.sign({ raw: 1 });
+    expect(transport.lastRequest()).toMatchObject({
+      method: "tron_signTransaction",
+      params: [{ transaction: { raw: 1 } }],
+    });
+    transport.respond("signed");
+    await expect(pending).resolves.toBe("signed");
+  });
+
+  it("hands the instance to window.tron only once the account is authorized", async () => {
+    (globalThis as { TronWeb?: unknown }).TronWeb = { TronWeb: StubTronWeb };
+    const transport = fakeTransport(DEFAULT_CHANNEL);
+    createInjectedWallet(transport, pageConfig({ tronWeb: true, fullHost: FULL_HOST }));
+    const provider = (window as TronWindow).tron;
+    const instance = (window as TronWindow).tronWeb as StubTronWeb;
+
+    expect(provider?.tronWeb).toBe(false);
+
+    const pending = provider?.request({ method: "eth_requestAccounts" });
+    transport.respond({ address: ADDRESS });
+    await expect(pending).resolves.toEqual([ADDRESS]);
+
+    expect(provider?.tronWeb).toBe(instance);
+    expect(instance.address).toBe(ADDRESS);
+    expect((instance as unknown as { ready: boolean }).ready).toBe(true);
+  });
+
+  it("accepts a constructor assigned straight to the global", () => {
+    (globalThis as { TronWeb?: unknown }).TronWeb = StubTronWeb;
+
+    createInjectedWallet(
+      fakeTransport(DEFAULT_CHANNEL),
+      pageConfig({ tronWeb: true, fullHost: FULL_HOST }),
+    );
+
+    expect(StubTronWeb.built).toBe(1);
+  });
+
+  it("builds nothing with the flag off", () => {
+    (globalThis as { TronWeb?: unknown }).TronWeb = { TronWeb: StubTronWeb };
+
+    createInjectedWallet(
+      fakeTransport(DEFAULT_CHANNEL),
+      pageConfig({ tronWeb: false, fullHost: FULL_HOST }),
+    );
+
+    expect(StubTronWeb.built).toBe(0);
+    expect((window as TronWindow).tronWeb).toBeUndefined();
+    expect((window as TronWindow).tron?.tronWeb).toBe(false);
+  });
+
+  it("builds nothing when the page has no constructor or the network has no node", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    createInjectedWallet(
+      fakeTransport(DEFAULT_CHANNEL),
+      pageConfig({ tronWeb: true, fullHost: FULL_HOST }),
+    );
+    expect((window as TronWindow).tronWeb).toBeUndefined();
+
+    resetInstalls();
+    delete (window as TronWindow).tron;
+    (globalThis as { TronWeb?: unknown }).TronWeb = { TronWeb: StubTronWeb };
+
+    createInjectedWallet(fakeTransport(DEFAULT_CHANNEL), pageConfig({ tronWeb: true }));
+
+    expect(StubTronWeb.built).toBe(0);
+    expect((window as TronWindow).tronWeb).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
   });
 });
