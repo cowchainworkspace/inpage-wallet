@@ -105,6 +105,8 @@ export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
   const nonce = useRef(createNonce());
   const [scriptNonce, setScriptNonce] = useState(nonce.current);
 
+  // A Tron dApp needs a TronWeb instance on the page: ship the SDK's browser
+  // bundle as a `prelude` and turn on `legacyGlobals.tronWeb`. See the README.
   const injected = useMemo(
     () => buildInjectedScript({ identity: IDENTITY, networks: NETWORKS, nonce: scriptNonce }),
     [scriptNonce],

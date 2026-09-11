@@ -21,6 +21,9 @@ export type ConformanceCheck = {
 
 export type ConformanceReport = { ok: boolean; checks: ConformanceCheck[] };
 
+/** A well-formed base58 address, so a host-side check on the answer can pass. */
+const TRON_ADDRESS = "TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE";
+
 /** One network per family, just enough for `bootstrap()` to install each chain. */
 const SAMPLE_NETWORK: Record<ChainFamily, NetworkDef> = {
   evm: { id: "1", family: "evm", name: "Ethereum", wire: { evmChainId: "0x1" } },
@@ -52,6 +55,9 @@ const WALLET_STANDARD_SPEC: Record<
 };
 
 type Announced = { info: { name: string; rdns: string; uuid: string }; provider: unknown };
+type TronProviderLike = {
+  request(args: { method: string; params?: unknown }): Promise<unknown>;
+};
 type RegisteredWallet = {
   name: string;
   chains?: readonly string[];
@@ -83,6 +89,7 @@ export async function checkInpageBundle(
 
   const posted: string[] = [];
   const announced: Announced[] = [];
+  const announcedTron: Announced[] = [];
   const registered: RegisteredWallet[] = [];
 
   (win as { ReactNativeWebView?: { postMessage(data: string): void } }).ReactNativeWebView = {
@@ -98,6 +105,9 @@ export async function checkInpageBundle(
   }) as typeof win.postMessage;
   win.addEventListener("eip6963:announceProvider", (event) => {
     announced.push((event as CustomEvent<Announced>).detail);
+  });
+  win.addEventListener("TIP6963:announceProvider", (event) => {
+    announcedTron.push((event as CustomEvent<Announced>).detail);
   });
   win.addEventListener("wallet-standard:register-wallet", (event) => {
     const detail = (event as unknown as { detail: (api: { register(w: unknown): void }) => void }).detail;
@@ -248,14 +258,40 @@ export async function checkInpageBundle(
     record("event reaches a listener", true, "cardano", "cardano has no public event API; not applicable");
   }
 
+  /** Both Tron surfaces: the announced provider on window.tron, and the legacy one. */
   async function checkTron(): Promise<void> {
+    const provider = win.tron as TronProviderLike | undefined;
+    const last = announcedTron[announcedTron.length - 1];
+    const identityOk =
+      Boolean(last) &&
+      last?.info.name === expect.identity.name &&
+      last?.info.rdns === expect.identity.rdns &&
+      last?.info.uuid === expect.identity.uuid;
+    record(
+      "discovery: TIP6963:announceProvider",
+      identityOk && last?.provider === provider,
+      "tron",
+      identityOk
+        ? last?.provider === provider
+          ? undefined
+          : "the announced provider is not window.tron"
+        : "no announce observed, or identity did not match",
+    );
+    record(
+      "discovery: window.tron.request",
+      typeof provider?.request === "function",
+      "tron",
+      provider ? undefined : "window.tron is missing",
+    );
+
     const tronLink = win.tronLink as
-      | { request(args: { method: string; params?: unknown }): Promise<unknown> }
+      | { ready: boolean; request(args: { method: string; params?: unknown }): Promise<unknown> }
       | undefined;
     record("discovery: window.tronLink", Boolean(tronLink), "tron", tronLink ? undefined : "window.tronLink is missing");
     if (!tronLink) return;
 
     await roundTrip("tron", () => tronLink.request({ method: "tron_accounts" }), []);
+    if (provider) await checkTronConnect(provider, tronLink);
 
     let seen: unknown;
     const listener = (event: MessageEvent): void => {
@@ -266,6 +302,38 @@ export async function checkInpageBundle(
     deliver({ kind: "event", family: "tron", event: "accountsChanged", data: [] });
     win.removeEventListener("message", listener);
     record("event reaches a listener", seen !== undefined, "tron");
+  }
+
+  /**
+   * The authorization method current Tron dApps call. It must reach the host as
+   * `tron_requestAccounts`, answer with the address array, and flip legacy `ready`.
+   */
+  async function checkTronConnect(
+    provider: TronProviderLike,
+    tronLink: { ready: boolean },
+  ): Promise<void> {
+    const name = "connect: eth_requestAccounts authorizes over tron_requestAccounts";
+    const promise = provider.request({ method: "eth_requestAccounts" });
+    await tick();
+    const req = lastRequest();
+    if (!req || req.method !== "tron_requestAccounts") {
+      record(name, false, "tron", req ? `the host was asked for ${req.method}` : "no request envelope observed");
+      promise.catch(() => {});
+      return;
+    }
+    deliver({ kind: "response", id: req.id, result: { address: TRON_ADDRESS } });
+    try {
+      const accounts = await promise;
+      const ok = Array.isArray(accounts) && accounts[0] === TRON_ADDRESS;
+      record(
+        name,
+        ok && tronLink.ready,
+        "tron",
+        ok ? (tronLink.ready ? undefined : "window.tronLink.ready did not flip") : `resolved ${JSON.stringify(accounts)}`,
+      );
+    } catch (error) {
+      record(name, false, "tron", error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function checkXrpCrossmark(): Promise<void> {
@@ -328,15 +396,16 @@ export async function checkInpageBundle(
     missingReady.length > 0 ? `missing: ${missingReady.join(", ")}` : undefined,
   );
 
-  const announcedBefore = announced.length;
+  const announcedBefore = announced.length + announcedTron.length;
   const registeredBefore = registered.length;
   win.eval(source);
+  const announcedAfter = announced.length + announcedTron.length;
   record(
     "second evaluation does not re-announce or re-register",
-    announced.length === announcedBefore && registered.length === registeredBefore,
+    announcedAfter === announcedBefore && registered.length === registeredBefore,
     undefined,
-    announced.length !== announcedBefore || registered.length !== registeredBefore
-      ? `announced ${announced.length - announcedBefore} more, registered ${registered.length - registeredBefore} more`
+    announcedAfter !== announcedBefore || registered.length !== registeredBefore
+      ? `announced ${announcedAfter - announcedBefore} more, registered ${registered.length - registeredBefore} more`
       : undefined,
   );
 

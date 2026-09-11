@@ -23,6 +23,8 @@ export type NetworkWire = {
   cardanoNetworkId?: 0 | 1 | undefined;
   /** CAIP-2, surfaced in parsed models and events. */
   caip2?: string | undefined;
+  /** Fullnode URL a page-built TronWeb instance reads from. The host's own. */
+  tronFullHost?: string | undefined;
 };
 
 /** A network the host registers. Ids are the host's own, never the package's. */

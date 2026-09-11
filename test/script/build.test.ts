@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 
 import { buildDeliveryScript, buildInjectedScript, buildPreamble } from "../../src/script/build";
 import { DEFAULT_CHANNEL, hostToPage } from "../../src/protocol/envelope";
+import type { InjectedConfig } from "../../src/inpage/core/config";
 import { configFor, IDENTITY } from "../inpage/fake-transport";
 
 const NONCE = "8f1c0b3a-5d2e-4a67-9b81-0c1d2e3f4a5b";
+const FULL_HOST = "https://tron.node.test";
 
 type Announced = {
   info: { rdns: string; uuid: string };
@@ -183,6 +185,50 @@ describe("buildInjectedScript with more than one family", () => {
       .filter((env) => env.kind === "ready")
       .flatMap((env) => env.families ?? []);
     expect(ready.sort()).toEqual(["evm", "solana"]);
+  });
+});
+
+describe("buildInjectedScript prelude", () => {
+  const stub = `(function () {
+    function Stub(options) { this.fullHost = options.fullHost; this.trx = {}; }
+    Stub.prototype.setAddress = function () {};
+    window.__preludeSawConfig = typeof window.__inpageWalletConfig;
+    window.TronWeb = { TronWeb: Stub };
+  })();`;
+
+  function tronConfig(): InjectedConfig {
+    const base = configFor(["tron"]);
+    const [network] = base.networks;
+    if (!network) throw new Error("no tron fixture network");
+    return {
+      ...base,
+      networks: [{ ...network, wire: { tronFullHost: FULL_HOST } }],
+      legacyGlobals: { tronWeb: true },
+    };
+  }
+
+  it("runs before the preamble, so a bundle sees what it defined", () => {
+    const { win } = freshPage();
+
+    win.eval(buildInjectedScript(tronConfig(), { prelude: [stub] }));
+
+    const w = win as RnWindow & { __preludeSawConfig?: string; tronWeb?: { fullHost?: string } };
+    expect(w.__preludeSawConfig).toBe("undefined");
+    expect(w.tronWeb?.fullHost).toBe(FULL_HOST);
+  });
+
+  it("keeps a prelude's top-level declarations out of the bundles' scope", () => {
+    const { win } = freshPage();
+
+    const script = buildInjectedScript(configFor(["evm"]), {
+      prelude: ["var announce = 1;", "var announce = 2;"],
+    });
+
+    expect(() => win.eval(script)).not.toThrow();
+  });
+
+  it("adds nothing when no prelude is given", () => {
+    expect(buildInjectedScript(configFor(["evm"]), {})).toBe(buildInjectedScript(configFor(["evm"])));
   });
 });
 
