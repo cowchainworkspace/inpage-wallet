@@ -135,6 +135,11 @@ to what each standard needs: `evmChainId` (hex), `walletStandardChain`,
 `cardanoNetworkId`, `caip2`, `tronFullHost` (the fullnode a page-built TronWeb
 instance reads from).
 
+`legacyGlobals.isTronLink` (off by default) puts `isTronLink: true` on
+`window.tron`, the marker Reown AppKit's Tron adapter checks for before it will
+list a wallet at all — it has no TIP-6963 path. AppKit then labels the wallet
+"TronLink", since it has no way to read `identity.name`.
+
 ## Methods
 
 Classification decides the route. `classify(method)` returns one of `readOnly`,

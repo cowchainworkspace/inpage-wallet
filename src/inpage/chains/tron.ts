@@ -32,13 +32,15 @@ export type TronLinkBridge = {
 
 /**
  * window.tron, the surface current Tron dApps use. `tronWeb` is `false` until the
- * origin is authorized. No `is<Wallet>` flag: identity travels in the announcement.
+ * origin is authorized. Identity normally travels in the announcement only;
+ * `isTronLink` is added when `legacyGlobals.isTronLink` opts in.
  */
 export type TronProvider = {
   request(args: TronRequestArgs): Promise<unknown>;
   on(event: string, listener: ProviderListener): TronProvider;
   removeListener(event: string, listener: ProviderListener): TronProvider;
   readonly tronWeb: TronWebLike | false;
+  isTronLink?: true;
 };
 
 /** TronLink dApps subscribe to these through window 'message' events. */
@@ -208,6 +210,7 @@ export function installTron(
     get tronWeb() {
       return connectedAddress.length > 0 && tronWeb ? tronWeb : false;
     },
+    ...(config.legacyGlobals?.isTronLink === true ? { isTronLink: true as const } : {}),
   };
 
   const announce = (): void => {
