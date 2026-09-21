@@ -353,6 +353,25 @@ looked up for that origin and family, or `null`). A CIP-30 per-account read —
 `cardano_getBalance`, `cardano_getUtxos`, `cardano_getCollateral` — sends no
 params of its own, so this is how `rpc` knows which account to query.
 
+**`deps.cardano.rewardAddresses`** answers `cardano_getRewardAddresses`. A
+session's `accounts` are CIP-30 payment addresses; reward (stake) addresses are
+a second list the session has no field for, so without this callback the
+method answers `[]`. The package never derives one itself — parsing a Cardano
+address is chain knowledge that belongs on the host side:
+
+```ts
+cardano: {
+  rewardAddresses: (session, { network }) =>
+    session.accounts.map((addr) => deriveRewardAddress(addr, network?.wire.cardanoNetworkId)),
+},
+```
+
+For a Shelley base address, the stake credential is bytes 29..57; the reward
+address is that 28-byte hash prefixed with `0xe0` (testnet) or `0xe1`
+(mainnet). An enterprise address has no stake credential, so `[]` is correct
+for it. The callback may return a `Promise`; a thrown or rejected callback, or
+one that resolves with anything other than `string[]`, becomes `-32603`.
+
 ## What this package will never contain
 
 Wallet identity, RPC endpoints, API keys, host URLs, signing code, or key
