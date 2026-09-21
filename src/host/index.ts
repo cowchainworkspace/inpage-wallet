@@ -21,6 +21,7 @@ export { TIMED_OUT, withTimeout, type Cancellable } from "./timeout";
 export {
   createDappRouter,
   type AddChainRequest,
+  type CardanoReads,
   type ConnectDecision,
   type ConnectDecisionFor,
   type ConnectRequest,

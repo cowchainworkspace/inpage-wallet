@@ -157,6 +157,20 @@ un-prefixed methods are EVM.
 With no session these answer with the family's default network and an empty
 account list. dApps poll them on every page load; a prompt here is a bug.
 
+**`cardano_getRewardAddresses`** is the one exception: a session's `accounts`
+are payment addresses, and CIP-30 reward (stake) addresses are a second list
+the session does not carry, so the router cannot answer it from the session
+alone. With no `deps.cardano.rewardAddresses` callback, or no session, it
+answers `[]`, same as `cardano_getUnusedAddresses`. With the callback, the
+router calls it with the session and `{ origin, network }` and returns
+whatever hex-encoded addresses it resolves with — synchronously or via a
+Promise. The package never parses a Cardano address itself: deriving the
+reward address from a payment address is the host's job. For a Shelley base
+address, the stake credential sits in bytes 29..57; the reward address is that
+28-byte hash prefixed with header byte `0xe0` (testnet) or `0xe1` (mainnet).
+An enterprise address carries no stake credential, so the correct answer for
+it is `[]`.
+
 ### readRpc — proxied to the host's node client
 
 An allow-list, never a passthrough: an unlisted method must not become a way to

@@ -138,6 +138,110 @@ describe("read-only methods answer locally and never prompt", () => {
   });
 });
 
+describe("cardano_getRewardAddresses", () => {
+  const CARDANO_SESSION = session({ family: "cardano", accounts: ["addr_hex_a", "addr_hex_b"] });
+
+  it("answers [] with no cardano dep", async () => {
+    h = harness([CARDANO_SESSION]);
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({ result: [] });
+  });
+
+  it("answers from the host's callback, passing the session and origin/network", async () => {
+    const rewardAddresses = vi.fn(() => ["stake_hex_a"]);
+    h = harness([CARDANO_SESSION], { cardano: { rewardAddresses } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({ result: ["stake_hex_a"] });
+    expect(rewardAddresses).toHaveBeenCalledWith(CARDANO_SESSION, {
+      origin: ORIGIN,
+      network: NETWORKS[3],
+    });
+  });
+
+  it("awaits an async callback", async () => {
+    const rewardAddresses = vi.fn(async () => ["stake_hex_a"]);
+    h = harness([CARDANO_SESSION], { cardano: { rewardAddresses } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({ result: ["stake_hex_a"] });
+  });
+
+  it("answers [] and skips the callback when there is no session", async () => {
+    const rewardAddresses = vi.fn(() => ["stake_hex_a"]);
+    h = harness([], { cardano: { rewardAddresses } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({ result: [] });
+    expect(rewardAddresses).not.toHaveBeenCalled();
+  });
+
+  it("turns a thrown callback into an internal error", async () => {
+    const rewardAddresses = vi.fn(() => {
+      throw new Error("derivation failed");
+    });
+    h = harness([CARDANO_SESSION], { cardano: { rewardAddresses } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({ error: { code: -32603, message: "derivation failed" } });
+  });
+
+  it("turns a rejected callback into an internal error", async () => {
+    const rewardAddresses = vi.fn(async () => {
+      throw new Error("lookup timed out");
+    });
+    h = harness([CARDANO_SESSION], { cardano: { rewardAddresses } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({ error: { code: -32603, message: "lookup timed out" } });
+  });
+
+  it("rejects a non-array result", async () => {
+    const rewardAddresses = vi.fn(() => "stake_hex_a" as unknown as string[]);
+    h = harness([CARDANO_SESSION], { cardano: { rewardAddresses } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({
+      error: { code: -32603, message: "cardano.rewardAddresses must resolve with a string[]" },
+    });
+  });
+
+  it("rejects an array with non-string entries", async () => {
+    const rewardAddresses = vi.fn(() => [1] as unknown as string[]);
+    h = harness([CARDANO_SESSION], { cardano: { rewardAddresses } });
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "cardano_getRewardAddresses" });
+
+    expect(out).toEqual({
+      error: { code: -32603, message: "cardano.rewardAddresses must resolve with a string[]" },
+    });
+  });
+
+  it("leaves cardano_getUnusedAddresses, getUsedAddresses and getChangeAddress untouched", async () => {
+    const rewardAddresses = vi.fn(() => ["stake_hex_a"]);
+    h = harness([CARDANO_SESSION], { cardano: { rewardAddresses } });
+
+    expect(
+      await h.router.handle({ origin: ORIGIN, method: "cardano_getUnusedAddresses" }),
+    ).toEqual({ result: [] });
+    expect(
+      await h.router.handle({ origin: ORIGIN, method: "cardano_getUsedAddresses" }),
+    ).toEqual({ result: ["addr_hex_a", "addr_hex_b"] });
+    expect(
+      await h.router.handle({ origin: ORIGIN, method: "cardano_getChangeAddress" }),
+    ).toEqual({ result: "addr_hex_a" });
+    expect(rewardAddresses).not.toHaveBeenCalled();
+  });
+});
+
 describe("read RPC passthrough", () => {
   beforeEach(() => {
     h = harness([session({ family: "evm" })]);
