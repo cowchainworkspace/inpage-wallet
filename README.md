@@ -232,6 +232,17 @@ call keeps running against your own node:
 
 The package never hardcodes a fullnode and adds no TronWeb dependency for either.
 
+### Tron: listing on Reown AppKit
+
+AppKit's Tron adapter has no TIP-6963 path — it only lists a wallet when
+`window.tron?.isTronLink === true || window.tronLink?.ready === true`, which is
+false before connect. `legacyGlobals: { isTronLink: true }` claims that marker on
+`window.tron` (never on `window.tronLink`) so AppKit-based dApps show the wallet.
+It changes nothing else: `tronLink.ready` and `window.tron.tronWeb` still stay
+`false` until the origin is authorized. Off by default to keep the package
+brand-neutral; AppKit has no way to read `identity.name`, so a dApp that needs
+this flag lists the wallet under the adapter's own name, "TronLink".
+
 ### Tron: full SDK in a WebView
 
 `buildInjectedScript` takes a `prelude` — raw scripts that run, each in a block of

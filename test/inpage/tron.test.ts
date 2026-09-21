@@ -240,6 +240,53 @@ describe("Tron provider on window.tron", () => {
   });
 });
 
+describe("Tron isTronLink opt-in", () => {
+  function installWithFlag(isTronLink: boolean): {
+    tronLink: TronLink;
+    provider: TronProvider;
+  } {
+    const transport = fakeTransport(DEFAULT_CHANNEL);
+    const config: InjectedConfig = { ...configFor(["tron"]), legacyGlobals: { isTronLink } };
+    createInjectedWallet(transport, config);
+    const { tronLink, tron } = window as TronWindow;
+    if (!tronLink) throw new Error("no tronLink installed");
+    if (!tron) throw new Error("no window.tron installed");
+    return { tronLink, provider: tron };
+  }
+
+  it("leaves isTronLink absent by default, on window.tron and the announced provider", () => {
+    const seen = announcements();
+    const { provider } = install();
+
+    expect("isTronLink" in provider).toBe(false);
+    expect("isTronLink" in (seen[0]?.provider ?? {})).toBe(false);
+  });
+
+  it("claims the TronLink marker when opted in, on window.tron and the announced provider", () => {
+    const seen = announcements();
+    const { provider } = installWithFlag(true);
+
+    expect(provider.isTronLink).toBe(true);
+    expect(seen[0]?.provider.isTronLink).toBe(true);
+  });
+
+  it("passes an AppKit-style genuine check before any connect", () => {
+    const { tronLink } = installWithFlag(true);
+    const provider = (window as TronWindow).tron;
+
+    const appKitGenuine = provider?.isTronLink === true || tronLink.ready === true;
+
+    expect(appKitGenuine).toBe(true);
+  });
+
+  it("does not flip tronLink.ready or window.tron.tronWeb before authorization", () => {
+    const { tronLink, provider } = installWithFlag(true);
+
+    expect(tronLink.ready).toBe(false);
+    expect(provider.tronWeb).toBe(false);
+  });
+});
+
 /** Stands in for the SDK's browser build, which leaves a namespace on the page. */
 class StubTronWeb {
   static built = 0;
