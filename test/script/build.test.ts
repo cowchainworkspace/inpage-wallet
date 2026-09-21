@@ -232,6 +232,27 @@ describe("buildInjectedScript prelude", () => {
   });
 });
 
+describe("buildInjectedScript legacyGlobals.isTronLink", () => {
+  type TronWindow = RnWindow & { tron?: { isTronLink?: boolean }; tronLink?: { ready: boolean } };
+
+  it("leaves isTronLink off window.tron by default", () => {
+    const { win } = freshPage();
+
+    win.eval(buildInjectedScript(configFor(["tron"])));
+
+    expect("isTronLink" in ((win as TronWindow).tron ?? {})).toBe(false);
+  });
+
+  it("carries the opt-in flag through to the shipped script and onto window.tron", () => {
+    const { win } = freshPage();
+    const config: InjectedConfig = { ...configFor(["tron"]), legacyGlobals: { isTronLink: true } };
+
+    win.eval(buildInjectedScript(config));
+
+    expect((win as TronWindow).tron?.isTronLink).toBe(true);
+  });
+});
+
 describe("buildDeliveryScript", () => {
   it("ends in a truthy expression so a WebView does not report an error", () => {
     const script = buildDeliveryScript(hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "x" }));

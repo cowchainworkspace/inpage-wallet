@@ -26,6 +26,12 @@ export type InjectedConfig = {
      * on window.tronWeb and window.tron.tronWeb. Needs `wire.tronFullHost` too.
      */
     tronWeb?: boolean | undefined;
+    /**
+     * Claim the TronLink marker on window.tron so dApps that only list TronLink
+     * (Reown AppKit) show the wallet — such dApps label it "TronLink". Off by
+     * default.
+     */
+    isTronLink?: boolean | undefined;
   } | undefined;
   /** window.cardano key dApps enumerate. Defaults to a slug of identity.name. */
   cardanoWalletKey?: string | undefined;
