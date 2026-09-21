@@ -227,6 +227,15 @@ export type Policy = {
   maxInFlightPerOrigin?: number | undefined;
 };
 
+/** Chain knowledge the router has no way to derive itself. */
+export type CardanoReads = {
+  /** CIP-30 getRewardAddresses: hex-encoded reward addresses for this session. */
+  rewardAddresses(
+    session: Session,
+    ctx: { origin: string; network: NetworkDef | null },
+  ): string[] | Promise<string[]>;
+};
+
 export type RouterDeps = {
   networks: NetworkDef[];
   sessions: SessionStore;
@@ -234,6 +243,7 @@ export type RouterDeps = {
   rpc?: RpcClient | undefined;
   emit(origin: string, event: ProviderEvent): void;
   policy?: Policy | undefined;
+  cardano?: CardanoReads | undefined;
 };
 
 export type ProviderRequest = {
@@ -463,10 +473,42 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
         return { result: network?.wire.cardanoNetworkId ?? 0 };
       case "cardano_getChangeAddress":
         return { result: accounts[0] ?? null };
+      case "cardano_getRewardAddresses":
+        // No `deps.cardano`: the host has not opted in to answering this.
+        return { result: [] };
       default:
-        // cardano_getUnusedAddresses, cardano_getRewardAddresses
+        // cardano_getUnusedAddresses
         return { result: [] };
     }
+  }
+
+  /**
+   * Reward addresses are a second account list the session does not carry, so
+   * unlike the others this read needs the host — no session, or no dep, means
+   * there is nothing to ask.
+   */
+  async function readCardanoRewardAddresses(
+    cardano: CardanoReads,
+    origin: string,
+    session: Session | null,
+    network: NetworkDef | null,
+  ): Promise<RouterOutcome> {
+    if (!session) return { result: [] };
+    let addresses: string[];
+    try {
+      addresses = await cardano.rewardAddresses(session, { origin, network });
+    } catch (error) {
+      return {
+        error: rpcError(
+          RPC_INTERNAL,
+          error instanceof Error ? error.message : "cardano.rewardAddresses failed",
+        ),
+      };
+    }
+    if (!Array.isArray(addresses) || addresses.some((a) => typeof a !== "string")) {
+      return { error: rpcError(RPC_INTERNAL, "cardano.rewardAddresses must resolve with a string[]") };
+    }
+    return { result: addresses };
   }
 
   // --- connect --------------------------------------------------------------
@@ -906,7 +948,11 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
     switch (kind) {
       case "readOnly": {
         const session = await deps.sessions.get(req.origin, family);
-        return answerReadOnly(req.method, session, networkOf(req.origin, session, family));
+        const network = networkOf(req.origin, session, family);
+        if (req.method === "cardano_getRewardAddresses" && deps.cardano) {
+          return readCardanoRewardAddresses(deps.cardano, req.origin, session, network);
+        }
+        return answerReadOnly(req.method, session, network);
       }
       case "readRpc": {
         if (!deps.rpc) return { error: unsupportedMethod(req.method) };
