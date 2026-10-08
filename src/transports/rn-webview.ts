@@ -26,6 +26,33 @@ function globals(): PageGlobals {
 
 let deliverSlot = 0;
 
+/**
+ * Holds a document's requests until the host's first `init`. The host drops
+ * everything a document posts before it has committed that document's origin,
+ * and it sends `init` once it has, so a request held until then is not lost.
+ */
+export function createInitGate(send: (env: PageToHostEnvelope) => void): {
+  post(env: PageToHostEnvelope): void;
+  receive(env: HostToPageEnvelope): void;
+} {
+  let open = false;
+  const held: PageToHostEnvelope[] = [];
+  return {
+    post(env) {
+      if (env.kind === "request" && !open) {
+        held.push(env);
+        return;
+      }
+      send(env);
+    },
+    receive(env) {
+      if (env.kind !== "init" || open) return;
+      open = true;
+      for (const env of held.splice(0)) send(env);
+    },
+  };
+}
+
 export type RnPageTransportOptions = {
   channel?: string | undefined;
   /** Slot in the deliver registry; one per provider sharing the page. */
@@ -40,22 +67,25 @@ export type RnPageTransportOptions = {
 export function rnWebViewTransport(options: RnPageTransportOptions = {}): PageTransport {
   const channel = options.channel ?? DEFAULT_CHANNEL;
   const key = options.key ?? `slot${(deliverSlot += 1)}`;
+  const gate = createInitGate((env) => {
+    const g = globals();
+    const preamblePost = g[RN_POST];
+    if (preamblePost) {
+      preamblePost(env);
+      return;
+    }
+    const native = g.ReactNativeWebView;
+    if (!native) return;
+    try {
+      native.postMessage(JSON.stringify(env));
+    } catch {
+      /* a serialisation failure must not break the page */
+    }
+  });
 
   return {
     post(env: PageToHostEnvelope): void {
-      const g = globals();
-      const preamblePost = g[RN_POST];
-      if (preamblePost) {
-        preamblePost(env);
-        return;
-      }
-      const native = g.ReactNativeWebView;
-      if (!native) return;
-      try {
-        native.postMessage(JSON.stringify(env));
-      } catch {
-        /* a serialisation failure must not break the page */
-      }
+      gate.post(env);
     },
     onMessage(handler: (env: HostToPageEnvelope) => void): void {
       const g = globals();
@@ -63,6 +93,7 @@ export function rnWebViewTransport(options: RnPageTransportOptions = {}): PageTr
       g[RN_DELIVER] = registry;
       registry[key] = (env: unknown) => {
         if (!isHostToPage(env, channel)) return;
+        gate.receive(env);
         handler(env);
       };
     },
@@ -104,6 +135,13 @@ export type RnHostTransportOptions = {
    * The nonce itself is never passed on.
    */
   onDrop?(reason: RnDropReason, detail: { origin?: string; size?: number }): void;
+  /**
+   * Sent as `init` to every newly committed document. The page holds its requests
+   * until an `init` arrives, and its `ready` is dropped when it posts before the
+   * commit, so without this a page reached by a cross-origin navigation waits
+   * forever.
+   */
+  icon?: string | undefined;
 };
 
 /** Above any legitimate envelope, and small enough that parsing one cannot stall. */
@@ -165,8 +203,15 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
       handlers.push(handler);
     },
     commit(navigation): void {
+      const fresh =
+        navigation !== null &&
+        (current?.origin !== navigation.origin || current.nonce !== navigation.nonce);
       current = navigation;
       warned.clear();
+      if (fresh && options.icon !== undefined) {
+        const init = { channel, direction: "host-to-page", kind: "init", icon: options.icon } as const;
+        options.inject(deliveryScript(init, navigation.nonce));
+      }
     },
     receive(origin, data): void {
       if (!origin || !current) return drop("no-commit", origin ? { origin } : {});

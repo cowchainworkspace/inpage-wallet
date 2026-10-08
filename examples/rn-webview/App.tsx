@@ -113,7 +113,12 @@ export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
   );
 
   const transport = useMemo(
-    () => createRnHostTransport({ inject: (script) => ref.current?.injectJavaScript(script) }),
+    () =>
+      createRnHostTransport({
+        inject: (script) => ref.current?.injectJavaScript(script),
+        // Greets each committed document, which releases the requests it held.
+        icon: IDENTITY.icon,
+      }),
     [],
   );
 

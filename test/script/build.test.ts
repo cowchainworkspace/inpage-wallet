@@ -61,6 +61,11 @@ function freshPage(): Page {
   return { win, posted, announced, wallets };
 }
 
+/** What a host does once it has committed the document: send `init`. */
+function greet(page: Page): void {
+  page.win.eval(buildDeliveryScript(hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "" })));
+}
+
 /** Every request envelope the page posted, in order. */
 function requests(posted: string[]): Record<string, unknown>[] {
   return posted
@@ -122,6 +127,8 @@ describe("buildInjectedScript", () => {
     page.win.eval(buildInjectedScript(configFor(["evm"])));
 
     const pending = page.announced[0]?.provider.request({ method: "eth_accounts" });
+    expect(requests(page.posted)).toEqual([]);
+    greet(page);
     const sent = JSON.parse(page.posted[1] ?? "null") as { id: string };
 
     page.win.eval(
@@ -152,6 +159,7 @@ describe("buildInjectedScript with more than one family", () => {
     it(`keeps every family's envelopes well formed: ${order.join(", ")}`, async () => {
       const page = freshPage();
       page.win.eval(buildInjectedScript(configFor([...order])));
+      greet(page);
 
       const solana = page.wallets.find((w) => w.chains.some((c) => c.startsWith("solana:")));
       const evm = page.announced[0]?.provider;

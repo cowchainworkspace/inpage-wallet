@@ -333,3 +333,44 @@ describe("without a callback, development warns once per reason", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("greeting a newly committed document", () => {
+  const OTHER = "https://raydium.io";
+
+  it("sends init carrying the icon and the document's nonce when a new origin is committed", () => {
+    const inject = vi.fn();
+    const transport = createRnHostTransport({ inject, icon: "data:image/png;base64,AA==" });
+
+    transport.commit({ origin: ORIGIN, nonce: NONCE });
+    transport.commit(null);
+    transport.commit({ origin: OTHER, nonce: NONCE });
+
+    expect(inject).toHaveBeenCalledTimes(2);
+    const script = inject.mock.calls[1]?.[0] as string;
+    expect(script).toContain('"kind":"init"');
+    expect(script).toContain("data:image/png;base64,AA==");
+    expect(script).toContain(NONCE);
+  });
+
+  it("does not greet again while the same document stays committed", () => {
+    const inject = vi.fn();
+    const transport = createRnHostTransport({ inject, icon: "data:x" });
+    const nav = { origin: ORIGIN, nonce: NONCE };
+
+    transport.commit(nav);
+    transport.commit(nav);
+    transport.commit({ ...nav });
+
+    expect(inject).toHaveBeenCalledTimes(1);
+  });
+
+  it("greets nobody between documents or when the host gave no icon", () => {
+    const withIcon = vi.fn();
+    createRnHostTransport({ inject: withIcon, icon: "data:x" }).commit(null);
+    const withoutIcon = vi.fn();
+    createRnHostTransport({ inject: withoutIcon }).commit({ origin: ORIGIN, nonce: NONCE });
+
+    expect(withIcon).not.toHaveBeenCalled();
+    expect(withoutIcon).not.toHaveBeenCalled();
+  });
+});

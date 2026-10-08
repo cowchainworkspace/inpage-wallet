@@ -5,7 +5,7 @@ import {
   type PageToHostEnvelope,
 } from "../../protocol/envelope";
 import type { ChainFamily } from "../../protocol/networks";
-import { RN_CONFIG, RN_DELIVER, RN_POST } from "../../transports/rn-webview";
+import { createInitGate, RN_CONFIG, RN_DELIVER, RN_POST } from "../../transports/rn-webview";
 import { createBridge, type Bridge } from "../core/bridge";
 import { initialIcon, type InjectedConfig } from "../core/config";
 import type { PageTransport } from "../core/transport";
@@ -26,11 +26,14 @@ function globals(): PageGlobals {
  * so postMessage to the isolated-world relay is the fallback.
  */
 function ambientTransport(key: string, channel: string): PageTransport {
+  // Only React Native drops a document's first messages, and its host greets every
+  // committed document. An extension host sends no init when its icon fails to
+  // resolve, so gating there would strand every request.
+  const rnGate = createInitGate((env) => globals()[RN_POST]?.(env));
   return {
     post(env: PageToHostEnvelope): void {
-      const preamblePost = globals()[RN_POST];
-      if (preamblePost) {
-        preamblePost(env);
+      if (globals()[RN_POST]) {
+        rnGate.post(env);
         return;
       }
       window.postMessage(env, window.location.origin);
@@ -41,6 +44,7 @@ function ambientTransport(key: string, channel: string): PageTransport {
       g[RN_DELIVER] = registry;
       registry[key] = (env: unknown) => {
         if (!isHostToPage(env, channel)) return;
+        rnGate.receive(env);
         handler(env);
       };
       window.addEventListener("message", (event: MessageEvent) => {
