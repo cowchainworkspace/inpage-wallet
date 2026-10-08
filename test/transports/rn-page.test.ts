@@ -66,3 +66,50 @@ describe("rnWebViewTransport", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("requests before the host's init", () => {
+  const REQUEST = pageToHost(DEFAULT_CHANNEL, { kind: "request", id: "r1", method: "eth_accounts" });
+  const INIT = hostToPage(DEFAULT_CHANNEL, { kind: "init", icon: "" });
+
+  function rnPage(): { posted: unknown[]; deliver: (env: unknown) => void; post: (env: typeof READY) => void } {
+    const posted: unknown[] = [];
+    w[RN_POST] = (env) => posted.push(env);
+    const transport = rnWebViewTransport({ key: "evm" });
+    transport.onMessage(() => undefined);
+    return { posted, deliver: (env) => w[RN_DELIVER]?.evm?.(env), post: (env) => transport.post(env) };
+  }
+
+  it("holds a request until init arrives, then sends it once", () => {
+    const page = rnPage();
+
+    page.post(READY);
+    page.post(REQUEST);
+    expect(page.posted).toEqual([READY]);
+
+    page.deliver(INIT);
+    page.deliver(INIT);
+    expect(page.posted).toEqual([READY, REQUEST]);
+  });
+
+  it("sends every held request, in order", () => {
+    const page = rnPage();
+    const second = pageToHost(DEFAULT_CHANNEL, { kind: "request", id: "r2", method: "eth_chainId" });
+
+    page.post(REQUEST);
+    page.post(second);
+    page.deliver(hostToPage(DEFAULT_CHANNEL, { kind: "response", id: "x", result: null }));
+    expect(page.posted).toEqual([]);
+
+    page.deliver(INIT);
+    expect(page.posted).toEqual([REQUEST, second]);
+  });
+
+  it("sends requests straight away once greeted", () => {
+    const page = rnPage();
+    page.deliver(INIT);
+
+    page.post(REQUEST);
+
+    expect(page.posted).toEqual([REQUEST]);
+  });
+});
