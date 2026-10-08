@@ -117,6 +117,9 @@ export async function checkInpageBundle(
   // A syntax error in `source` (or the preamble) must propagate, not become a check.
   win.eval(buildPreamble(config));
   win.eval(source);
+  // A React Native page holds its requests until the host greets it; an empty
+  // icon leaves the placeholder alone.
+  deliver({ kind: "init", icon: "" });
 
   function record(name: string, ok: boolean, family?: ChainFamily, detail?: string): void {
     checks.push({ name, ...(family ? { family } : {}), ok, ...(detail !== undefined ? { detail } : {}) });
