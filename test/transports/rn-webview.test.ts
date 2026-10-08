@@ -373,4 +373,28 @@ describe("greeting a newly committed document", () => {
     expect(withIcon).not.toHaveBeenCalled();
     expect(withoutIcon).not.toHaveBeenCalled();
   });
+
+  it("answers a ready from a same-origin reload, which keeps the commit", () => {
+    const inject = vi.fn();
+    const transport = createRnHostTransport({ inject, icon: "data:x" });
+    transport.commit({ origin: ORIGIN, nonce: NONCE });
+    inject.mockClear();
+
+    transport.receive(ORIGIN, payload("ready"));
+
+    expect(inject).toHaveBeenCalledTimes(1);
+    expect(inject.mock.calls[0]?.[0]).toContain('"kind":"init"');
+  });
+
+  it("answers nothing it dropped", () => {
+    const inject = vi.fn();
+    const transport = createRnHostTransport({ inject, icon: "data:x" });
+    transport.commit({ origin: ORIGIN, nonce: NONCE });
+    inject.mockClear();
+
+    transport.receive(ORIGIN, payload("ready", "wrong-nonce"));
+    transport.receive(null, payload("ready"));
+
+    expect(inject).not.toHaveBeenCalled();
+  });
 });

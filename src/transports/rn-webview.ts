@@ -136,10 +136,8 @@ export type RnHostTransportOptions = {
    */
   onDrop?(reason: RnDropReason, detail: { origin?: string; size?: number }): void;
   /**
-   * Sent as `init` to every newly committed document. The page holds its requests
-   * until an `init` arrives, and its `ready` is dropped when it posts before the
-   * commit, so without this a page reached by a cross-origin navigation waits
-   * forever.
+   * Sent as `init` to every newly committed document and in answer to every
+   * accepted `ready`. The page holds its requests until an `init` arrives.
    */
   icon?: string | undefined;
 };
@@ -191,6 +189,12 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
     globalThis.console?.warn?.(`[inpage-wallet] dropped a WebView message: ${reason}`, detail);
   }
 
+  function greet(navigation: RnCommittedNavigation): void {
+    if (options.icon === undefined) return;
+    const init = { channel, direction: "host-to-page", kind: "init", icon: options.icon } as const;
+    options.inject(deliveryScript(init, navigation.nonce));
+  }
+
   return {
     // A WebView has one document; injecting an answer for an origin that is no
     // longer showing would hand it to whatever replaced it.
@@ -208,10 +212,7 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
         (current?.origin !== navigation.origin || current.nonce !== navigation.nonce);
       current = navigation;
       warned.clear();
-      if (fresh && options.icon !== undefined) {
-        const init = { channel, direction: "host-to-page", kind: "init", icon: options.icon } as const;
-        options.inject(deliveryScript(init, navigation.nonce));
-      }
+      if (fresh) greet(navigation);
     },
     receive(origin, data): void {
       if (!origin || !current) return drop("no-commit", origin ? { origin } : {});
@@ -226,6 +227,8 @@ export function createRnHostTransport(options: RnHostTransportOptions): RnHostTr
       }
       if (!isPageToHost(parsed, channel)) return drop("malformed", { origin });
       if (parsed.n !== current.nonce) return drop("nonce-mismatch", { origin });
+      // A same-origin reload keeps the commit, so its new document is greeted here.
+      if (parsed.kind === "ready") greet(current);
       for (const handler of handlers) handler(origin, parsed);
     },
   };

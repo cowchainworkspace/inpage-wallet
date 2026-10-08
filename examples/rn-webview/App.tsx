@@ -116,7 +116,8 @@ export default function DappBrowser({ uri }: { uri: string }): JSX.Element {
     () =>
       createRnHostTransport({
         inject: (script) => ref.current?.injectJavaScript(script),
-        // Greets each committed document, which releases the requests it held.
+        // Answers ready and greets each committed document with init, which releases
+        // the requests the page held.
         icon: IDENTITY.icon,
       }),
     [],

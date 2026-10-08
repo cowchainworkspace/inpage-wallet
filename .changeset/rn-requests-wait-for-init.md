@@ -13,9 +13,9 @@ origin is already committed, worked.
   `init` and then sent in order. `ready` is not held. The extension path is
   unchanged.
 - **Host side:** `createRnHostTransport({ icon })` sends `init` to every newly
-  committed document, which releases what the page held. Hosts that answer
-  `ready` with `init` but do not pass `icon` keep working for same-origin loads,
-  but a page reached cross-origin waits until it is reloaded, so pass it.
+  committed document and answers every accepted `ready` with it, which releases
+  what the page held. Pass `icon`: a host without it must answer `ready` itself,
+  and a page reached cross-origin still waits until it is reloaded.
 
 The host's checks are unchanged: nothing is accepted before commit. A request is
 sent again only by the document that holds it, so the previous document still

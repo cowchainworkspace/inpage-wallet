@@ -142,9 +142,11 @@ delivery script built for a previous document is ignored by the page. See
 **Pass `icon` so a cross-origin page is not left waiting.** A WebView reports a
 navigation to another site as committed only when it finishes loading, and the
 transport drops what the new document posts before then — its `ready` included.
-The page therefore holds its requests until the host's first `init`, and with
-`icon` set the transport sends that `init` to every newly committed document.
-Without it, a page reached by a cross-origin navigation waits until a reload.
+The page therefore holds its requests until the host's first `init`. With `icon`
+set, the transport sends that `init` to every newly committed document and in
+answer to every accepted `ready`. Without it the host must answer `ready` with
+`init` itself, and a page reached by a cross-origin navigation still waits until
+a reload.
 
 **A dropped message is not a slow one.** `createRnHostTransport` takes an
 optional `onDrop(reason, detail)` — `"no-commit"`, `"nonce-mismatch"`,

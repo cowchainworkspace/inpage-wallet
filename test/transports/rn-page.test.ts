@@ -91,6 +91,19 @@ describe("requests before the host's init", () => {
     expect(page.posted).toEqual([READY, REQUEST]);
   });
 
+  it("sends every held request, in order", () => {
+    const page = rnPage();
+    const second = pageToHost(DEFAULT_CHANNEL, { kind: "request", id: "r2", method: "eth_chainId" });
+
+    page.post(REQUEST);
+    page.post(second);
+    page.deliver(hostToPage(DEFAULT_CHANNEL, { kind: "response", id: "x", result: null }));
+    expect(page.posted).toEqual([]);
+
+    page.deliver(INIT);
+    expect(page.posted).toEqual([REQUEST, second]);
+  });
+
   it("sends requests straight away once greeted", () => {
     const page = rnPage();
     page.deliver(INIT);
