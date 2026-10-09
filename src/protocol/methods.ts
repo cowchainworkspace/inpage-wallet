@@ -25,6 +25,7 @@ export interface MethodMap {
   net_version: { params: []; result: string };
   eth_accounts: { params: []; result: string[] };
   wallet_getPermissions: { params: []; result: { parentCapability: string }[] };
+  wallet_revokePermissions: { params: [Record<string, unknown>]; result: null };
   eth_requestAccounts: { params: []; result: string[] };
   wallet_requestPermissions: { params: [Record<string, unknown>]; result: string[] };
   wallet_switchEthereumChain: { params: [{ chainId: string }]; result: null };
@@ -172,6 +173,7 @@ export const CONNECT_METHODS: ReadonlySet<string> = new Set([
 ]);
 
 export const DISCONNECT_METHODS: ReadonlySet<string> = new Set([
+  "wallet_revokePermissions",
   "solana_disconnect",
   "cardano_disconnect",
   "tron_disconnect",

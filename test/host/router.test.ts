@@ -1140,6 +1140,85 @@ describe("solana", () => {
   });
 });
 
+describe("wallet_revokePermissions", () => {
+  const OTHER = "https://app.aave.com";
+
+  it("clears the EVM session for that origin only and emits an empty account list", async () => {
+    h = harness([session({ family: "evm" }), session({ family: "evm", origin: OTHER })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    });
+
+    expect(out).toEqual({ result: null });
+    expect(await h.sessions.get(ORIGIN, "evm")).toBeNull();
+    expect(await h.sessions.get(OTHER, "evm")).not.toBeNull();
+    expect(h.events).toEqual([
+      { origin: ORIGIN, event: { family: "evm", event: "accountsChanged", data: [] } },
+    ]);
+  });
+
+  it("leaves a Solana session on the same origin alone", async () => {
+    h = harness([session({ family: "evm" }), session({ family: "solana" })]);
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    });
+
+    expect(await h.sessions.get(ORIGIN, "evm")).toBeNull();
+    expect((await h.sessions.get(ORIGIN, "solana"))?.accounts).toEqual([SOL_ADDRESS]);
+  });
+
+  it("keeps the session when another permission is revoked", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_revokePermissions",
+      params: [{ something_else: {} }],
+    });
+
+    expect(out).toEqual({ result: null });
+    expect((await h.sessions.get(ORIGIN, "evm"))?.accounts).toEqual([EVM_ADDRESS]);
+    expect(h.events).toEqual([]);
+  });
+
+  it("treats missing params as revoking eth_accounts", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    const out = await h.router.handle({ origin: ORIGIN, method: "wallet_revokePermissions" });
+
+    expect(out).toEqual({ result: null });
+    expect(await h.sessions.get(ORIGIN, "evm")).toBeNull();
+  });
+
+  it("leaves the origin unconnected: no accounts and signing refused", async () => {
+    h = harness([session({ family: "evm" })]);
+
+    await h.router.handle({
+      origin: ORIGIN,
+      method: "wallet_revokePermissions",
+      params: [{ eth_accounts: {} }],
+    });
+
+    expect(await h.router.handle({ origin: ORIGIN, method: "eth_accounts" })).toEqual({
+      result: [],
+    });
+    expect(
+      await h.router.handle({
+        origin: ORIGIN,
+        method: "personal_sign",
+        params: [MESSAGE, EVM_ADDRESS],
+      }),
+    ).toEqual({ error: { code: 4100, message: "Unauthorized — connect the wallet first" } });
+    expect(h.sign).not.toHaveBeenCalled();
+  });
+});
+
 describe("btc connect", () => {
   const BTC_ADDRESS = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
   const BTC_NETWORKS = [...NETWORKS, { id: "btc_main", family: "btc", name: "Bitcoin", wire: {} } as NetworkDef];

@@ -238,9 +238,14 @@ Results per family:
 
 ### disconnect
 
-`solana_disconnect`, `cardano_disconnect`, `tron_disconnect`,
-`xrpl_disconnect`, `btc_disconnect`. Clears the session, emits
-`accountsChanged: []`, answers `null`.
+`wallet_revokePermissions`, `solana_disconnect`, `cardano_disconnect`,
+`tron_disconnect`, `xrpl_disconnect`, `btc_disconnect`. Clears the session for
+that family only, emits `accountsChanged: []`, answers `null`.
+
+`wallet_revokePermissions` disconnects only when it revokes `eth_accounts`, the
+one permission the package grants; missing or malformed params count as
+`eth_accounts`, as in MetaMask. A revoke of any other permission answers `null`
+and leaves the session alone. As with MetaMask, no `disconnect` event is emitted.
 
 ### switch
 
