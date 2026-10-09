@@ -285,6 +285,13 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/** Missing or malformed params revoke `eth_accounts`, as MetaMask does. */
+function revokesAccounts(params: unknown): boolean {
+  const first: unknown = Array.isArray(params) ? params[0] : undefined;
+  if (!first || typeof first !== "object" || Array.isArray(first)) return true;
+  return Object.hasOwn(first, "eth_accounts");
+}
+
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 /**
@@ -990,6 +997,9 @@ export function createDappRouter(deps: RouterDeps): DappRouter {
       case "connect":
         return connect(req.origin, family, req.method, params, controller);
       case "disconnect":
+        if (req.method === "wallet_revokePermissions" && !revokesAccounts(params)) {
+          return { result: null };
+        }
         await clearSession(req.origin, family);
         emitFor(req.origin, family, "accountsChanged", []);
         return { result: null };
